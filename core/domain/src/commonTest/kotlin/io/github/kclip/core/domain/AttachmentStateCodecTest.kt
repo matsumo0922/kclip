@@ -34,6 +34,18 @@ class AttachmentStateCodecTest {
     }
 
     @Test
+    fun leaseRejectsUnknownCapabilityBitsWithoutThrowing() {
+        val encoded = assertIs<Outcome.Ok<ByteArray>>(AttachmentStateCodec.encodeLease(createLease())).value
+        val corrupted = encoded.copyOf()
+        corrupted[CAPABILITY_OFFSET] = 0
+        corrupted[CAPABILITY_OFFSET + 1] = UNKNOWN_CAPABILITY_BIT
+        val body = corrupted.copyOfRange(fromIndex = 0, toIndex = corrupted.size - CHECKSUM_BYTES)
+        Sha256.digest(body).copyInto(corrupted, destinationOffset = corrupted.size - CHECKSUM_BYTES)
+
+        assertIs<Outcome.Err>(AttachmentStateCodec.decodeLease(corrupted))
+    }
+
+    @Test
     fun bindingRoundTripsTtyIdentity() {
         val binding = AttachmentBinding(
             attachmentId = attachmentId(),
@@ -75,5 +87,11 @@ class AttachmentStateCodecTest {
 
     private fun secret(bytes: ByteArray): Secret16 {
         return assertIs<Outcome.Ok<Secret16>>(Secret16.fromBytes(bytes)).value
+    }
+
+    private companion object {
+        const val CAPABILITY_OFFSET = 40
+        const val CHECKSUM_BYTES = 32
+        const val UNKNOWN_CAPABILITY_BIT = 0x04.toByte()
     }
 }

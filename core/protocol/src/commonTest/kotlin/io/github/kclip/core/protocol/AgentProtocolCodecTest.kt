@@ -72,6 +72,19 @@ class AgentProtocolCodecTest {
     }
 
     @Test
+    fun readResponseRejectsOversizedErrorBodyBeforeReadingPayload() {
+        val channel = MemoryProtocolByteChannel(
+            initialBytes = hexBytes("4B434C52010100000000100100000001FFFF"),
+        )
+        val limits = ProtocolLimits(maxErrorBodyBytes = 4096)
+
+        val error = assertIs<Outcome.Err>(codec.readResponse(channel, limits, deadline)).error
+
+        assertIs<KclipError.TooLarge>(error)
+        assertEquals(16, channel.readOffset)
+    }
+
+    @Test
     fun writeAndReadResponseRoundTrips() {
         val writeChannel = MemoryProtocolByteChannel()
         val response = AgentResponse(

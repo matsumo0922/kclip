@@ -188,9 +188,18 @@ object AttachmentStateCodec {
             return corruptedState("lease flags must be zero")
         }
 
-        val attachmentId = AttachmentId.fromBytes(reader.readBytes(ATTACHMENT_ID_BYTES)).okValueOrReturn()
-        val nonce = Secret16.fromBytes(reader.readBytes(SECRET_BYTES)).okValueOrReturn()
-        val capabilities = capabilitiesFromBits(reader.readUShort()).okValueOrReturn()
+        val attachmentId = when (val outcome = AttachmentId.fromBytes(reader.readBytes(ATTACHMENT_ID_BYTES))) {
+            is Outcome.Ok -> outcome.value
+            is Outcome.Err -> return outcome
+        }
+        val nonce = when (val outcome = Secret16.fromBytes(reader.readBytes(SECRET_BYTES))) {
+            is Outcome.Ok -> outcome.value
+            is Outcome.Err -> return outcome
+        }
+        val capabilities = when (val outcome = capabilitiesFromBits(reader.readUShort())) {
+            is Outcome.Ok -> outcome.value
+            is Outcome.Err -> return outcome
+        }
         val endpointType = reader.readByte()
         if (reader.readByte() != 0) {
             return corruptedState("lease reserved byte must be zero")
@@ -254,9 +263,14 @@ object AttachmentStateCodec {
             return unsupportedStateVersion()
         }
 
+        val attachmentId = when (val outcome = AttachmentId.fromBytes(reader.readBytes(ATTACHMENT_ID_BYTES))) {
+            is Outcome.Ok -> outcome.value
+            is Outcome.Err -> return outcome
+        }
+
         return Outcome.Ok(
             AttachmentBinding(
-                attachmentId = AttachmentId.fromBytes(reader.readBytes(ATTACHMENT_ID_BYTES)).okValueOrReturn(),
+                attachmentId = attachmentId,
                 ttyIdentity = TtyIdentity(
                     device = reader.readULong(),
                     inode = reader.readULong(),
@@ -309,10 +323,6 @@ object AttachmentStateCodec {
                 message = "unsupported attachment state format version",
             ),
         )
-    }
-
-    private fun <T> Outcome<T>.okValueOrReturn(): T {
-        return (this as Outcome.Ok<T>).value
     }
 }
 

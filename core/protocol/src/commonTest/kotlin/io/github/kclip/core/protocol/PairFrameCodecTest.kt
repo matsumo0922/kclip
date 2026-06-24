@@ -62,6 +62,24 @@ class PairFrameCodecTest {
         assertEquals(frame.maxPasteBytes, decoded.maxPasteBytes)
     }
 
+    @Test
+    fun pairFrameRejectsUnknownCapabilityBitsWithoutThrowing() {
+        val bytes = hexBytes(
+            "0001000400000000000001F5000000000000006F00000000000000DE00020004000C00006D65686F73742F6465762F74747973303031",
+        )
+
+        assertIs<Outcome.Err>(PairFrameCodec.decodePairFrame(bytes))
+    }
+
+    @Test
+    fun pairAcceptedFrameRejectsUnknownCapabilityBitsWithoutThrowing() {
+        val bytes = hexBytes(
+            "000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F000400000000040000000800",
+        )
+
+        assertIs<Outcome.Err>(PairFrameCodec.decodePairAcceptedFrame(bytes))
+    }
+
     private fun attachmentId(): AttachmentId {
         return assertIs<Outcome.Ok<AttachmentId>>(
             AttachmentId.fromBytes(ByteArray(size = 16) { index -> index.toByte() }),

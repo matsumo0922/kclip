@@ -238,6 +238,10 @@ class DefaultAgentProtocolCodec : AgentProtocolCodec {
         if (payloadLength > limits.maxResponseBodyBytes.toUInt()) {
             return tooLarge(payloadLength, limits.maxResponseBodyBytes)
         }
+        val isErrorBody = status != AgentStatus.OK
+        if (isErrorBody && payloadLength > limits.maxErrorBodyBytes.toUInt()) {
+            return tooLarge(payloadLength, limits.maxErrorBodyBytes)
+        }
         val payload = readExact(channel, payloadLength.toInt(), deadline)
         if (payload is Outcome.Err) {
             return payload

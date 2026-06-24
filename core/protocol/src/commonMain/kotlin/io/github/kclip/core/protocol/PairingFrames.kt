@@ -79,7 +79,10 @@ object PairFrameCodec {
         if (reader.readUShort() != BODY_VERSION) {
             return protocolFailure("unsupported PAIR body version")
         }
-        val capabilities = capabilitiesFromBits(reader.readUShort()).okValueOrReturn()
+        val capabilities = when (val outcome = capabilitiesFromBits(reader.readUShort())) {
+            is Outcome.Ok -> outcome.value
+            is Outcome.Err -> return outcome
+        }
         val remoteUid = reader.readULong()
         val ttyDevice = reader.readULong()
         val ttyInode = reader.readULong()
@@ -94,16 +97,29 @@ object PairFrameCodec {
             return protocolFailure("PAIR body length mismatch")
         }
 
+        val username = when (val outcome = reader.readUtf8(usernameLength)) {
+            is Outcome.Ok -> outcome.value
+            is Outcome.Err -> return outcome
+        }
+        val hostname = when (val outcome = reader.readUtf8(hostnameLength)) {
+            is Outcome.Ok -> outcome.value
+            is Outcome.Err -> return outcome
+        }
+        val ttyPath = when (val outcome = reader.readUtf8(ttyPathLength)) {
+            is Outcome.Ok -> outcome.value
+            is Outcome.Err -> return outcome
+        }
+
         return Outcome.Ok(
             PairFrame(
                 requestedCapabilities = capabilities,
                 remoteUid = remoteUid,
-                username = reader.readUtf8(usernameLength).okValueOrReturn(),
-                hostname = reader.readUtf8(hostnameLength).okValueOrReturn(),
+                username = username,
+                hostname = hostname,
                 ttyIdentity = TtyIdentity(
                     device = ttyDevice,
                     inode = ttyInode,
-                    displayPath = reader.readUtf8(ttyPathLength).okValueOrReturn(),
+                    displayPath = ttyPath,
                 ),
             ),
         )
@@ -131,9 +147,18 @@ object PairFrameCodec {
         }
 
         val reader = ProtocolBinaryReader(bytes)
-        val attachmentId = AttachmentId.fromBytes(reader.readBytes(SECRET_BYTES)).okValueOrReturn()
-        val attachmentNonce = Secret16.fromBytes(reader.readBytes(SECRET_BYTES)).okValueOrReturn()
-        val capabilities = capabilitiesFromBits(reader.readUShort()).okValueOrReturn()
+        val attachmentId = when (val outcome = AttachmentId.fromBytes(reader.readBytes(SECRET_BYTES))) {
+            is Outcome.Ok -> outcome.value
+            is Outcome.Err -> return outcome
+        }
+        val attachmentNonce = when (val outcome = Secret16.fromBytes(reader.readBytes(SECRET_BYTES))) {
+            is Outcome.Ok -> outcome.value
+            is Outcome.Err -> return outcome
+        }
+        val capabilities = when (val outcome = capabilitiesFromBits(reader.readUShort())) {
+            is Outcome.Ok -> outcome.value
+            is Outcome.Err -> return outcome
+        }
         if (reader.readUShort() != 0u) {
             return protocolFailure("PAIR accepted body reserved field must be zero")
         }
@@ -193,10 +218,6 @@ object PairFrameCodec {
                 maxBytes = maxBytes,
             ),
         )
-    }
-
-    private fun <T> Outcome<T>.okValueOrReturn(): T {
-        return (this as Outcome.Ok<T>).value
     }
 }
 
