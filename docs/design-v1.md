@@ -7,7 +7,7 @@
 | 対応OS | macOS、Linux |
 | 実装 | Kotlin/Native CLI |
 | 改訂日 | 2026-06-24 |
-| 想定ライセンス | Apache-2.0 |
+| 想定ライセンス | MIT |
 
 > **改訂の要点:** v1 の primary path を `kclip ssh` managed session から、既存の通常 SSH session に対する `kclip pair` / `kclip attach` へ変更した。`kclip ssh` は同じ attachment architecture を自動化する convenience command とする。
 
