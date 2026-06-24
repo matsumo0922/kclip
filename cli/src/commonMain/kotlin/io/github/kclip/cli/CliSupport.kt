@@ -3,18 +3,24 @@ package io.github.kclip.cli
 import com.github.ajalt.clikt.core.CliktCommand
 import io.github.kclip.core.domain.BackendPreference
 import io.github.kclip.core.domain.KclipError
+import io.github.kclip.core.domain.Outcome
 import kotlin.system.exitProcess
 
 /**
  * CLI の backend option を domain value へ変換する helper。
  */
-fun parseBackendPreference(value: String): BackendPreference {
+fun parseBackendPreference(value: String): Outcome<BackendPreference> {
     return when (value) {
-        "auto" -> BackendPreference.AUTO
-        "system" -> BackendPreference.SYSTEM
-        "attachment" -> BackendPreference.ATTACHMENT
-        "osc52" -> BackendPreference.OSC52
-        else -> BackendPreference.AUTO
+        "auto" -> Outcome.Ok(BackendPreference.AUTO)
+        "system" -> Outcome.Ok(BackendPreference.SYSTEM)
+        "attachment" -> Outcome.Ok(BackendPreference.ATTACHMENT)
+        "osc52" -> Outcome.Ok(BackendPreference.OSC52)
+        else -> Outcome.Err(
+            KclipError.InvalidInput(
+                message = "invalid backend: $value",
+                detail = "expected one of: auto, system, attachment, osc52",
+            ),
+        )
     }
 }
 

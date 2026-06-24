@@ -2,6 +2,7 @@ package io.github.kclip.core.platform
 
 import io.github.kclip.core.domain.KclipError
 import io.github.kclip.core.domain.Outcome
+import io.github.kclip.core.platform.spawn.kclip_spawn_with_files
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.CPointerVar
@@ -22,18 +23,13 @@ import platform.posix.O_RDONLY
 import platform.posix.O_TRUNC
 import platform.posix.O_WRONLY
 import platform.posix.SIGKILL
-import platform.posix.STDERR_FILENO
 import platform.posix.STDIN_FILENO
 import platform.posix.STDOUT_FILENO
 import platform.posix.WNOHANG
 import platform.posix.X_OK
-import platform.posix._exit
 import platform.posix.access
 import platform.posix.close
-import platform.posix.dup2
 import platform.posix.errno
-import platform.posix.execve
-import platform.posix.fork
 import platform.posix.kill
 import platform.posix.mkstemp
 import platform.posix.open
@@ -108,8 +104,19 @@ class UnixByteOutput(
 class UnixCommandRunner : CommandRunner {
     override fun run(spec: CommandSpec, stdin: ByteArray?): Outcome<CommandOutput> {
         val stdinFile = createInputFile(stdin) ?: return lastErrno("failed to create stdin file")
-        val stdoutFile = createTemporaryFile() ?: return lastErrno("failed to create stdout file")
-        val stderrFile = createTemporaryFile() ?: return lastErrno("failed to create stderr file")
+        val stdoutFile = createTemporaryFile()
+        if (stdoutFile == null) {
+            stdinFile.unlink()
+
+            return lastErrno("failed to create stdout file")
+        }
+        val stderrFile = createTemporaryFile()
+        if (stderrFile == null) {
+            stdinFile.unlink()
+            stdoutFile.unlink()
+
+            return lastErrno("failed to create stderr file")
+        }
 
         return try {
             runWithFiles(spec, stdinFile, stdoutFile, stderrFile)
@@ -177,33 +184,25 @@ class UnixCommandRunner : CommandRunner {
             }
             environmentPointer[environmentValues.size] = null
 
-            val processId = fork()
-            if (processId < 0) {
-                return@memScoped lastErrno("failed to fork command")
+            val processId = allocArray<IntVar>(1)
+            val spawnResult = kclip_spawn_with_files(
+                processId,
+                spec.executable,
+                argv,
+                environmentPointer,
+                stdinFile.path,
+                stdoutFile.path,
+                stderrFile.path,
+            )
+            if (spawnResult != 0) {
+                return@memScoped errnoResult(
+                    message = "failed to spawn command",
+                    errorNumber = spawnResult,
+                )
             }
-            if (processId == 0) {
-                redirectOrExit(STDIN_FILENO, stdinFile.path, O_RDONLY)
-                redirectOrExit(STDOUT_FILENO, stdoutFile.path, O_WRONLY or O_TRUNC)
-                redirectOrExit(STDERR_FILENO, stderrFile.path, O_WRONLY or O_TRUNC)
-                execve(spec.executable, argv, environmentPointer)
-                _exit(127)
-            }
 
-            Outcome.Ok(processId)
+            Outcome.Ok(processId[0])
         }
-    }
-
-    private fun redirectOrExit(targetFileDescriptor: Int, path: String, flags: Int) {
-        val fileDescriptor = open(path, flags)
-        if (fileDescriptor < 0) {
-            _exit(126)
-        }
-
-        if (dup2(fileDescriptor, targetFileDescriptor) < 0) {
-            _exit(126)
-        }
-
-        close(fileDescriptor)
     }
 
     private fun createInputFile(stdin: ByteArray?): TemporaryFile? {

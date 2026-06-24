@@ -23,6 +23,10 @@ class CopyCommand(
     private val maxBytes by option("--max-bytes").int().default(DefaultClipboardLimits.MAX_BYTES)
 
     override fun run() {
+        val backendPreference = when (val outcome = parseBackendPreference(backend)) {
+            is Outcome.Ok -> outcome.value
+            is Outcome.Err -> exitWith(outcome.error)
+        }
         val bytes = when (val outcome = platformServices.standardInput.readAll(maxBytes)) {
             is Outcome.Ok -> outcome.value
             is Outcome.Err -> exitWith(outcome.error)
@@ -32,7 +36,7 @@ class CopyCommand(
             is Outcome.Err -> exitWith(outcome.error)
         }
         val options = CopyOptions(
-            backendPreference = parseBackendPreference(backend),
+            backendPreference = backendPreference,
             maxBytes = maxBytes,
         )
         val useCase = CopyUseCase(platformServices.clipboardBackendResolver)

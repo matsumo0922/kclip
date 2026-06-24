@@ -22,8 +22,12 @@ class PasteCommand(
     private val maxBytes by option("--max-bytes").int().default(DefaultClipboardLimits.MAX_BYTES)
 
     override fun run() {
+        val backendPreference = when (val outcome = parseBackendPreference(backend)) {
+            is Outcome.Ok -> outcome.value
+            is Outcome.Err -> exitWith(outcome.error)
+        }
         val options = PasteOptions(
-            backendPreference = parseBackendPreference(backend),
+            backendPreference = backendPreference,
             maxBytes = maxBytes,
         )
         val useCase = PasteUseCase(platformServices.clipboardBackendResolver)

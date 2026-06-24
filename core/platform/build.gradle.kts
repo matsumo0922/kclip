@@ -4,6 +4,16 @@ plugins {
 }
 
 kotlin {
+    targets.withType<org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget>().configureEach {
+        compilations.getByName("main") {
+            cinterops {
+                create("kclipSpawn") {
+                    defFile(project.file("src/nativeInterop/cinterop/kclip_spawn.def"))
+                }
+            }
+        }
+    }
+
     sourceSets {
         commonMain.dependencies {
             implementation(project(":core:diagnostics"))
