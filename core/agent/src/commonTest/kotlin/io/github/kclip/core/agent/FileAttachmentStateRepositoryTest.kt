@@ -81,6 +81,10 @@ class FileAttachmentStateRepositoryTest {
 private class MemoryFileStore : FileStore {
     private val files = mutableMapOf<String, ByteArray>()
 
+    override fun exists(path: String): Outcome<Boolean> {
+        return Outcome.Ok(files.containsKey(path))
+    }
+
     override fun readBytes(path: String, maxBytes: Int): Outcome<ByteArray> {
         val bytes = files[path]
             ?: return Outcome.Err(

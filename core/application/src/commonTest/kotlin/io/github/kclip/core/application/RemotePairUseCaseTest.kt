@@ -78,6 +78,68 @@ class RemotePairUseCaseTest {
         assertEquals(null, repository.lease)
     }
 
+    @Test
+    fun executeRejectsExistingBindingWithoutReplace() {
+        val material = pairingMaterial()
+        val repository = RecordingAttachmentStateRepository(
+            existingBinding = AttachmentBinding(
+                attachmentId = acceptedFrame().attachmentId,
+                ttyIdentity = remotePairContext(material).ttyIdentity,
+            ),
+        )
+        val agentClient = FakePairAgentClient(
+            expectedCredential = material.credential,
+            acceptedFrame = acceptedFrame(),
+            repository = repository,
+        )
+        val useCase = RemotePairUseCase(agentClient, repository)
+
+        val error = assertIs<Outcome.Err>(
+            useCase.execute(
+                options = PairOptions(
+                    requestPaste = true,
+                    replaceExisting = false,
+                ),
+                context = remotePairContext(material),
+            ),
+        ).error
+
+        assertIs<KclipError.InvalidInput>(error)
+        assertEquals(null, repository.lease)
+    }
+
+    @Test
+    fun executeRollsBackCommitWhenConfirmFails() {
+        val material = pairingMaterial()
+        val repository = RecordingAttachmentStateRepository()
+        val agentClient = FakePairAgentClient(
+            expectedCredential = material.credential,
+            acceptedFrame = acceptedFrame(),
+            repository = repository,
+            confirmResult = Outcome.Err(
+                KclipError.ProtocolFailure(
+                    message = "confirm failed",
+                ),
+            ),
+        )
+        val useCase = RemotePairUseCase(agentClient, repository)
+
+        val error = assertIs<Outcome.Err>(
+            useCase.execute(
+                options = PairOptions(
+                    requestPaste = true,
+                    replaceExisting = false,
+                ),
+                context = remotePairContext(material),
+            ),
+        ).error
+
+        assertIs<KclipError.ProtocolFailure>(error)
+        assertEquals(null, repository.lease)
+        assertEquals(null, repository.binding)
+        assertTrue(repository.rollbackCalled)
+    }
+
     private fun pairingMaterial(): PairingMaterial {
         return assertIs<Outcome.Ok<PairingMaterial>>(
             PairingMaterial.fromEntropy(ByteArray(size = 10) { index -> index.toByte() }),
@@ -120,15 +182,31 @@ class RemotePairUseCaseTest {
 /**
  * test 用の attachment state repository。
  */
-private class RecordingAttachmentStateRepository : AttachmentStateRepository {
+private class RecordingAttachmentStateRepository(
+    private val existingBinding: AttachmentBinding? = null,
+) : AttachmentStateRepository {
     var lease: AttachmentLease? = null
         private set
     var binding: AttachmentBinding? = null
         private set
+    var rollbackCalled = false
+        private set
+
+    override fun findBinding(ttyIdentity: TtyIdentity): Outcome<AttachmentBinding?> {
+        return Outcome.Ok(existingBinding)
+    }
 
     override fun commit(lease: AttachmentLease, binding: AttachmentBinding): Outcome<Unit> {
         this.lease = lease
         this.binding = binding
+
+        return Outcome.Ok(Unit)
+    }
+
+    override fun rollback(lease: AttachmentLease, binding: AttachmentBinding): Outcome<Unit> {
+        rollbackCalled = true
+        this.lease = null
+        this.binding = null
 
         return Outcome.Ok(Unit)
     }
@@ -141,6 +219,7 @@ private class FakePairAgentClient(
     private val expectedCredential: PairCredential,
     val acceptedFrame: PairAcceptedFrame,
     private val repository: RecordingAttachmentStateRepository,
+    private val confirmResult: Outcome<Unit> = Outcome.Ok(Unit),
 ) : PairAgentClient {
     var confirmObservedCommittedState = false
         private set
@@ -168,6 +247,6 @@ private class FakePairAgentClient(
     override fun confirm(acceptedFrame: PairAcceptedFrame): Outcome<Unit> {
         confirmObservedCommittedState = repository.lease?.id == acceptedFrame.attachmentId
 
-        return Outcome.Ok(Unit)
+        return confirmResult
     }
 }

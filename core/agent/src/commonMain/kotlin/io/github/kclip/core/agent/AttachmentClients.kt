@@ -237,6 +237,30 @@ class FileAttachmentStateRepository(
     private val runtimePaths: RuntimePaths,
     private val ttyIdentityResolver: TtyIdentityResolver,
 ) : AttachmentStateRepository {
+    override fun findBinding(ttyIdentity: TtyIdentity): Outcome<AttachmentBinding?> {
+        val path = when (val outcome = bindingPath(ttyIdentity)) {
+            is Outcome.Ok -> outcome.value
+            is Outcome.Err -> return outcome
+        }
+        val exists = when (val outcome = fileStore.exists(path)) {
+            is Outcome.Ok -> outcome.value
+            is Outcome.Err -> return outcome
+        }
+        if (!exists) {
+            return Outcome.Ok(null)
+        }
+        val bytes = when (val outcome = fileStore.readBytes(path, MAX_STATE_BYTES)) {
+            is Outcome.Ok -> outcome.value
+            is Outcome.Err -> return outcome
+        }
+        val binding = when (val outcome = AttachmentStateCodec.decodeBinding(bytes)) {
+            is Outcome.Ok -> outcome.value
+            is Outcome.Err -> return outcome
+        }
+
+        return Outcome.Ok(binding)
+    }
+
     override fun commit(lease: AttachmentLease, binding: AttachmentBinding): Outcome<Unit> {
         val leaseWrite = writeLease(lease)
         if (leaseWrite is Outcome.Err) {
@@ -246,13 +270,30 @@ class FileAttachmentStateRepository(
         return writeBinding(binding)
     }
 
+    override fun rollback(lease: AttachmentLease, binding: AttachmentBinding): Outcome<Unit> {
+        val leasePath = when (val outcome = leasePath(lease.id)) {
+            is Outcome.Ok -> outcome.value
+            is Outcome.Err -> return outcome
+        }
+        val bindingPath = when (val outcome = bindingPath(binding.ttyIdentity)) {
+            is Outcome.Ok -> outcome.value
+            is Outcome.Err -> return outcome
+        }
+        val leaseDelete = fileStore.delete(leasePath)
+        if (leaseDelete is Outcome.Err) {
+            return leaseDelete
+        }
+
+        return fileStore.delete(bindingPath)
+    }
+
     fun readCurrentLease(): Outcome<AttachmentLease> {
         val ttyIdentity = when (val outcome = ttyIdentityResolver.current()) {
             is Outcome.Ok -> outcome.value
             is Outcome.Err -> return outcome
         }
-        val binding = when (val outcome = readBinding(ttyIdentity)) {
-            is Outcome.Ok -> outcome.value
+        val binding = when (val outcome = findBinding(ttyIdentity)) {
+            is Outcome.Ok -> outcome.value ?: return missingBinding()
             is Outcome.Err -> return outcome
         }
 
@@ -298,19 +339,6 @@ class FileAttachmentStateRepository(
         return fileStore.writePrivateBytes(path, bytes)
     }
 
-    private fun readBinding(ttyIdentity: TtyIdentity): Outcome<AttachmentBinding> {
-        val path = when (val outcome = bindingPath(ttyIdentity)) {
-            is Outcome.Ok -> outcome.value
-            is Outcome.Err -> return outcome
-        }
-        val bytes = when (val outcome = fileStore.readBytes(path, MAX_STATE_BYTES)) {
-            is Outcome.Ok -> outcome.value
-            is Outcome.Err -> return missingBinding(outcome.error)
-        }
-
-        return AttachmentStateCodec.decodeBinding(bytes)
-    }
-
     private fun leasePath(id: AttachmentId): Outcome<String> {
         val directory = when (val outcome = runtimePaths.attachmentsDirectory()) {
             is Outcome.Ok -> outcome.value
@@ -330,12 +358,11 @@ class FileAttachmentStateRepository(
         return Outcome.Ok("$directory/$filename")
     }
 
-    private fun missingBinding(error: KclipError): Outcome.Err {
+    private fun missingBinding(): Outcome.Err {
         return Outcome.Err(
             KclipError.AttachmentUnavailable(
                 attachmentId = null,
                 message = "no local clipboard attachment is bound to this terminal",
-                detail = error.message,
             ),
         )
     }

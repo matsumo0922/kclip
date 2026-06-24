@@ -158,12 +158,72 @@ static inline int kclip_unix_accept(int listener_fd) {
     return accept(listener_fd, NULL, NULL);
 }
 
-static inline int kclip_mkdir_private(const char *path) {
-    return mkdir(path, 0700);
+static inline int kclip_verify_private_dir(const char *path) {
+    struct stat stat_buffer;
+    if (lstat(path, &stat_buffer) != 0) {
+        return -1;
+    }
+
+    if (!S_ISDIR(stat_buffer.st_mode)) {
+        errno = ENOTDIR;
+        return -1;
+    }
+
+    if (stat_buffer.st_uid != getuid()) {
+        errno = EACCES;
+        return -1;
+    }
+
+    if ((stat_buffer.st_mode & 0777) != 0700) {
+        errno = EACCES;
+        return -1;
+    }
+
+    return 0;
+}
+
+static inline int kclip_ensure_private_dir(const char *path) {
+    if (mkdir(path, 0700) == 0) {
+        return kclip_verify_private_dir(path);
+    }
+
+    if (errno == EEXIST) {
+        return kclip_verify_private_dir(path);
+    }
+
+    return -1;
 }
 
 static inline int kclip_open_private_write(const char *path) {
-    return open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+#ifdef O_NOFOLLOW
+    int nofollow_flag = O_NOFOLLOW;
+#else
+    int nofollow_flag = 0;
+#endif
+
+    int file_descriptor = open(path, O_WRONLY | O_CREAT | O_TRUNC | nofollow_flag, 0600);
+    if (file_descriptor < 0) {
+        return -1;
+    }
+
+    struct stat stat_buffer;
+    if (fstat(file_descriptor, &stat_buffer) != 0) {
+        close(file_descriptor);
+        return -1;
+    }
+
+    if (!S_ISREG(stat_buffer.st_mode) || stat_buffer.st_uid != getuid()) {
+        close(file_descriptor);
+        errno = EACCES;
+        return -1;
+    }
+
+    if (fchmod(file_descriptor, 0600) != 0) {
+        close(file_descriptor);
+        return -1;
+    }
+
+    return file_descriptor;
 }
 
 static inline int kclip_stat_identity(

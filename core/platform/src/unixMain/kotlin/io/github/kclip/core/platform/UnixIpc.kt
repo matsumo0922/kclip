@@ -9,7 +9,7 @@ import io.github.kclip.core.domain.Outcome
 import io.github.kclip.core.domain.ProtocolByteChannel
 import io.github.kclip.core.domain.TtyIdentity
 import io.github.kclip.core.platform.spawn.kclip_current_uid
-import io.github.kclip.core.platform.spawn.kclip_mkdir_private
+import io.github.kclip.core.platform.spawn.kclip_ensure_private_dir
 import io.github.kclip.core.platform.spawn.kclip_spawn_background_with_config_fd
 import io.github.kclip.core.platform.spawn.kclip_stat_identity
 import io.github.kclip.core.platform.spawn.kclip_unix_accept
@@ -264,16 +264,12 @@ class UnixRuntimePaths(
     }
 
     private fun ensureDirectory(path: String): Outcome<String> {
-        val result = kclip_mkdir_private(path)
-        if (result != 0 && errno != EEXIST_VALUE) {
+        val result = kclip_ensure_private_dir(path)
+        if (result != 0) {
             return lastErrno("failed to create runtime directory")
         }
 
         return Outcome.Ok(path)
-    }
-
-    private companion object {
-        const val EEXIST_VALUE = 17
     }
 }
 

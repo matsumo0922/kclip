@@ -54,17 +54,32 @@ class AttachCommand(
             attachmentNonce = attachmentNonce,
             allowPaste = allowPaste,
         )
+        val controlPath = createControlPath(attachmentId)
 
         val agentProcess = startAgent(attachmentId, config)
-        val controlPath = startDedicatedForwarding(attachmentId, material, localEndpoint)
-        writeMetadata(
+        val metadata = LocalAttachmentMetadata(
             attachmentId = attachmentId,
-            agentProcess = agentProcess,
-            localEndpoint = localEndpoint,
+            agentProcessId = agentProcess.processId,
+            destination = destination,
+            localSocketPath = localEndpoint.path,
             controlPath = controlPath,
-            allowPaste = allowPaste,
+            allowsPaste = allowPaste,
         )
-        waitUntilActive(attachmentId, attachmentNonce, localEndpoint, allowPaste)
+        val forwarding = startDedicatedForwarding(material, localEndpoint, controlPath)
+        if (forwarding is Outcome.Err) {
+            cleanupPartialAttachment(metadata)
+            exitWith(forwarding.error)
+        }
+        val metadataWrite = LocalAttachmentMetadataStore(platformServices).write(metadata)
+        if (metadataWrite is Outcome.Err) {
+            cleanupPartialAttachment(metadata)
+            exitWith(metadataWrite.error)
+        }
+        val active = waitUntilActive(attachmentId, attachmentNonce, localEndpoint, allowPaste)
+        if (active is Outcome.Err) {
+            cleanupPartialAttachment(metadata)
+            exitWith(active.error)
+        }
 
         echo("Attached ${attachmentId.displayValue()} using dedicated transport.")
     }
@@ -174,12 +189,11 @@ class AttachCommand(
     }
 
     private fun startDedicatedForwarding(
-        attachmentId: AttachmentId,
         material: PairingMaterial,
         localEndpoint: IpcEndpoint.UnixSocket,
-    ): String {
-        val controlPath = createControlPath(attachmentId)
-        runSsh(
+        controlPath: String,
+    ): Outcome<Unit> {
+        val master = runSsh(
             arguments = listOf(
                 "-fNT",
                 "-M",
@@ -199,7 +213,10 @@ class AttachCommand(
             ),
             message = "failed to start dedicated SSH master",
         )
-        runSsh(
+        if (master is Outcome.Err) {
+            return master
+        }
+        val forward = runSsh(
             arguments = listOf(
                 "-S",
                 controlPath,
@@ -217,29 +234,11 @@ class AttachCommand(
             ),
             message = "failed to add dedicated SSH forwarding",
         )
-
-        return controlPath
-    }
-
-    private fun writeMetadata(
-        attachmentId: AttachmentId,
-        agentProcess: BackgroundProcess,
-        localEndpoint: IpcEndpoint.UnixSocket,
-        controlPath: String,
-        allowPaste: Boolean,
-    ) {
-        val metadata = LocalAttachmentMetadata(
-            attachmentId = attachmentId,
-            agentProcessId = agentProcess.processId,
-            destination = destination,
-            localSocketPath = localEndpoint.path,
-            controlPath = controlPath,
-            allowsPaste = allowPaste,
-        )
-        val write = LocalAttachmentMetadataStore(platformServices).write(metadata)
-        if (write is Outcome.Err) {
-            exitWith(write.error)
+        if (forward is Outcome.Err) {
+            stopSshMaster(controlPath)
         }
+
+        return forward
     }
 
     private fun createControlPath(attachmentId: AttachmentId): String {
@@ -251,7 +250,7 @@ class AttachCommand(
         return "$directory/${attachmentId.value.lowercase()}.ctl"
     }
 
-    private fun runSsh(arguments: List<String>, message: String) {
+    private fun runSsh(arguments: List<String>, message: String): Outcome<Unit> {
         val output = platformServices.commandRunner.run(
             spec = CommandSpec(
                 executable = sshExecutable,
@@ -263,17 +262,19 @@ class AttachCommand(
             stdin = null,
         )
         if (output is Outcome.Err) {
-            exitWith(output.error)
+            return output
         }
         val commandOutput = (output as Outcome.Ok).value
         if (commandOutput.exitStatus != 0) {
-            exitWith(
+            return Outcome.Err(
                 KclipError.ForwardingRejected(
                     message = message,
                     detail = commandOutput.stderr.decodeToString(),
                 ),
             )
         }
+
+        return Outcome.Ok(Unit)
     }
 
     private fun waitUntilActive(
@@ -281,7 +282,7 @@ class AttachCommand(
         attachmentNonce: Secret16,
         localEndpoint: IpcEndpoint.UnixSocket,
         allowPaste: Boolean,
-    ) {
+    ): Outcome<Unit> {
         val lease = AttachmentLease(
             formatVersion = 1u,
             id = attachmentId,
@@ -306,21 +307,65 @@ class AttachCommand(
         while (platformServices.clock.nowMillis() <= deadlineMillis) {
             val ping = backend.ping()
             if (ping is Outcome.Ok) {
-                return
+                return Outcome.Ok(Unit)
             }
             lastError = (ping as Outcome.Err).error
 
             val sleep = platformServices.sleeper.sleepMillis(RETRY_DELAY_MILLIS)
             if (sleep is Outcome.Err) {
-                exitWith(sleep.error)
+                return sleep
             }
         }
 
-        exitWith(
+        return Outcome.Err(
             KclipError.TimedOut(
                 message = "no matching pairing request completed before the deadline",
                 detail = lastError?.message,
             ),
+        )
+    }
+
+    private fun cleanupPartialAttachment(metadata: LocalAttachmentMetadata) {
+        stopSshMaster(metadata.controlPath)
+        stopAgent(metadata.agentProcessId)
+        platformServices.fileStore.delete(metadata.localSocketPath)
+        platformServices.fileStore.delete(metadata.controlPath)
+        LocalAttachmentMetadataStore(platformServices).delete(metadata.attachmentId)
+    }
+
+    private fun stopSshMaster(controlPath: String) {
+        platformServices.commandRunner.run(
+            spec = CommandSpec(
+                executable = sshExecutable,
+                arguments = listOf(
+                    "-S",
+                    controlPath,
+                    "-o",
+                    "BatchMode=yes",
+                    "-o",
+                    "ConnectTimeout=8",
+                    "-O",
+                    "exit",
+                    destination,
+                ),
+                environment = platformServices.environment.snapshot(),
+                timeoutMillis = SSH_TIMEOUT_MILLIS,
+                maxStderrBytes = MAX_SSH_STDERR_BYTES,
+            ),
+            stdin = null,
+        )
+    }
+
+    private fun stopAgent(processId: Int) {
+        platformServices.commandRunner.run(
+            spec = CommandSpec(
+                executable = "/bin/kill",
+                arguments = listOf(processId.toString()),
+                environment = platformServices.environment.snapshot(),
+                timeoutMillis = KILL_TIMEOUT_MILLIS,
+                maxStderrBytes = MAX_SSH_STDERR_BYTES,
+            ),
+            stdin = null,
         )
     }
 
@@ -335,6 +380,7 @@ class AttachCommand(
 
     private companion object {
         const val ATTACH_TIMEOUT_MILLIS = 10 * 60 * 1_000L
+        const val KILL_TIMEOUT_MILLIS = 5_000L
         const val MAX_PAIRING_CODE_BYTES = 256
         const val MAX_SSH_STDERR_BYTES = 16 * 1024
         const val MILLIS_PER_SECOND = 1_000L

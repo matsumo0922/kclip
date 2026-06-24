@@ -59,6 +59,7 @@ class AttachmentAgent(
     private val codec: AgentProtocolCodec = DefaultAgentProtocolCodec(),
 ) {
     private var state = AgentLifecycleState.PAIRING
+    private var activeCapabilities: Set<ClipboardCapability> = emptySet()
 
     fun status(): Outcome<AgentStatusSnapshot> {
         return Outcome.Ok(
@@ -123,6 +124,10 @@ class AttachmentAgent(
         }
     }
 
+    internal fun handleRequestForTest(request: AgentRequest): AgentResponse {
+        return dispatch(request)
+    }
+
     private fun handlePair(request: AgentRequest): AgentResponse {
         if (!hasPairCredential(request)) {
             return errorResponse(AgentStatus.UNAUTHORIZED, "pair credential was rejected")
@@ -147,6 +152,7 @@ class AttachmentAgent(
         }
 
         state = AgentLifecycleState.PENDING_CONFIRM
+        activeCapabilities = acceptedFrame.grantedCapabilities
         return okResponse(payload)
     }
 
@@ -169,6 +175,9 @@ class AttachmentAgent(
         if (!canUseAttachment(request)) {
             return errorResponse(AgentStatus.ATTACHMENT_NOT_ACTIVE, "attachment is not active")
         }
+        if (ClipboardCapability.COPY !in activeCapabilities) {
+            return errorResponse(AgentStatus.CAPABILITY_DENIED, "copy is denied for attachment")
+        }
         val payload = when (val outcome = ClipboardPayload.fromUtf8Bytes(request.payload, config.maxCopyBytes)) {
             is Outcome.Ok -> outcome.value
             is Outcome.Err -> return errorResponse(AgentStatus.BAD_REQUEST, outcome.error.message)
@@ -189,7 +198,7 @@ class AttachmentAgent(
         if (!canUseAttachment(request)) {
             return errorResponse(AgentStatus.ATTACHMENT_NOT_ACTIVE, "attachment is not active")
         }
-        if (!config.allowPaste) {
+        if (ClipboardCapability.PASTE !in activeCapabilities) {
             return errorResponse(AgentStatus.CAPABILITY_DENIED, "paste is denied for attachment")
         }
         val backend = when (val outcome = clipboardBackendResolver.resolve(BackendPreference.SYSTEM)) {

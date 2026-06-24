@@ -8,6 +8,7 @@ import io.github.kclip.core.application.CopyOptions
 import io.github.kclip.core.application.CopyUseCase
 import io.github.kclip.core.application.DefaultClipboardLimits
 import io.github.kclip.core.domain.AttachmentId
+import io.github.kclip.core.domain.ClipboardOperation
 import io.github.kclip.core.domain.ClipboardPayload
 import io.github.kclip.core.domain.Outcome
 import io.github.kclip.core.platform.PlatformServices
@@ -42,7 +43,12 @@ class CopyCommand(
             backendPreference = backendPreference,
             maxBytes = maxBytes,
         )
-        val backendOutcome = resolveClipboardBackend(backendPreference, attachmentId, platformServices)
+        val backendOutcome = resolveClipboardBackend(
+            operation = ClipboardOperation.COPY,
+            preference = backendPreference,
+            attachmentId = attachmentId,
+            platformServices = platformServices,
+        )
         val backend = when (backendOutcome) {
             is Outcome.Ok -> backendOutcome.value
             is Outcome.Err -> exitWith(backendOutcome.error)

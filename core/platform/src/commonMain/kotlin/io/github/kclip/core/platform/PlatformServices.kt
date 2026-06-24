@@ -97,6 +97,8 @@ interface SecureRandom {
  * kclip runtime state 用の private file store。
  */
 interface FileStore {
+    fun exists(path: String): Outcome<Boolean>
+
     fun readBytes(path: String, maxBytes: Int): Outcome<ByteArray>
 
     fun writePrivateBytes(path: String, bytes: ByteArray): Outcome<Unit>

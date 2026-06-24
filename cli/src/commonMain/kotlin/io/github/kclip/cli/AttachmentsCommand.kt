@@ -3,6 +3,7 @@ package io.github.kclip.cli
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.parameters.arguments.argument
 import io.github.kclip.core.domain.AttachmentId
+import io.github.kclip.core.domain.KclipError
 import io.github.kclip.core.domain.Outcome
 import io.github.kclip.core.platform.CommandSpec
 import io.github.kclip.core.platform.PlatformServices
@@ -69,6 +70,10 @@ class DetachCommand(
                 arguments = listOf(
                     "-S",
                     metadata.controlPath,
+                    "-o",
+                    "BatchMode=yes",
+                    "-o",
+                    "ConnectTimeout=8",
                     "-O",
                     "exit",
                     metadata.destination,
@@ -80,6 +85,15 @@ class DetachCommand(
         )
         if (output is Outcome.Err) {
             exitWith(output.error)
+        }
+        val commandOutput = (output as Outcome.Ok).value
+        if (commandOutput.exitStatus != 0) {
+            exitWith(
+                KclipError.ForwardingRejected(
+                    message = "failed to stop dedicated SSH master",
+                    detail = commandOutput.stderr.decodeToString(),
+                ),
+            )
         }
     }
 

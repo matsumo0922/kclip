@@ -8,6 +8,7 @@ import io.github.kclip.core.application.DefaultClipboardLimits
 import io.github.kclip.core.application.PasteOptions
 import io.github.kclip.core.application.PasteUseCase
 import io.github.kclip.core.domain.AttachmentId
+import io.github.kclip.core.domain.ClipboardOperation
 import io.github.kclip.core.domain.Outcome
 import io.github.kclip.core.platform.PlatformServices
 
@@ -33,7 +34,12 @@ class PasteCommand(
             backendPreference = backendPreference,
             maxBytes = maxBytes,
         )
-        val backendOutcome = resolveClipboardBackend(backendPreference, attachmentId, platformServices)
+        val backendOutcome = resolveClipboardBackend(
+            operation = ClipboardOperation.PASTE,
+            preference = backendPreference,
+            attachmentId = attachmentId,
+            platformServices = platformServices,
+        )
         val backend = when (backendOutcome) {
             is Outcome.Ok -> backendOutcome.value
             is Outcome.Err -> exitWith(backendOutcome.error)

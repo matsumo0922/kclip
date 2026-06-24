@@ -15,7 +15,9 @@ import kotlinx.cinterop.set
 import kotlinx.cinterop.toKString
 import kotlinx.cinterop.usePinned
 import platform.posix.ENOENT
+import platform.posix.F_OK
 import platform.posix.O_RDONLY
+import platform.posix.access
 import platform.posix.close
 import platform.posix.errno
 import platform.posix.gethostname
@@ -104,6 +106,18 @@ class UnixSecureRandom : SecureRandom {
  * Unix の private file store。
  */
 class UnixFileStore : FileStore {
+    override fun exists(path: String): Outcome<Boolean> {
+        val result = access(path, F_OK)
+        if (result == 0) {
+            return Outcome.Ok(true)
+        }
+        if (errno == ENOENT) {
+            return Outcome.Ok(false)
+        }
+
+        return lastErrno("failed to inspect state file")
+    }
+
     override fun readBytes(path: String, maxBytes: Int): Outcome<ByteArray> {
         val fileDescriptor = open(path, O_RDONLY)
         if (fileDescriptor < 0) {

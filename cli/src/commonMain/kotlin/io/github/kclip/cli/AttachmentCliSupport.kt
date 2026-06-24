@@ -5,10 +5,12 @@ import io.github.kclip.core.agent.FileAttachmentStateRepository
 import io.github.kclip.core.domain.AttachmentId
 import io.github.kclip.core.domain.BackendPreference
 import io.github.kclip.core.domain.ClipboardBackend
+import io.github.kclip.core.domain.ClipboardOperation
 import io.github.kclip.core.domain.IpcEndpoint
 import io.github.kclip.core.domain.KclipError
 import io.github.kclip.core.domain.Outcome
 import io.github.kclip.core.domain.PairingMaterial
+import io.github.kclip.core.platform.Environment
 import io.github.kclip.core.platform.PlatformServices
 
 /**
@@ -33,6 +35,7 @@ fun attachmentStateRepository(platformServices: PlatformServices): FileAttachmen
  * copy/paste 用 backend を attachment 優先で解決する helper。
  */
 fun resolveClipboardBackend(
+    operation: ClipboardOperation,
     preference: BackendPreference,
     attachmentId: AttachmentId?,
     platformServices: PlatformServices,
@@ -46,6 +49,15 @@ fun resolveClipboardBackend(
         val error = (attachmentBackend as Outcome.Err).error
         if (preference == BackendPreference.ATTACHMENT || !isMissingCurrentBinding(error)) {
             return attachmentBackend
+        }
+        if (requiresAttachmentForMissingBinding(operation, preference, platformServices.environment)) {
+            return Outcome.Err(
+                KclipError.AttachmentUnavailable(
+                    attachmentId = null,
+                    message = "no local clipboard attachment is bound to this SSH terminal",
+                    detail = "run `kclip pair --paste` remotely, then `kclip attach --paste=allow <ssh-destination>` locally",
+                ),
+            )
         }
     }
 
@@ -77,6 +89,18 @@ private fun resolveAttachmentBackend(
 
 private fun isMissingCurrentBinding(error: KclipError): Boolean {
     return error is KclipError.AttachmentUnavailable && error.attachmentId == null
+}
+
+internal fun requiresAttachmentForMissingBinding(
+    operation: ClipboardOperation,
+    preference: BackendPreference,
+    environment: Environment,
+): Boolean {
+    val hasSshConnection = environment.get("SSH_CONNECTION")?.isNotBlank() == true
+    val hasSshClient = environment.get("SSH_CLIENT")?.isNotBlank() == true
+    val isAutoPaste = operation == ClipboardOperation.PASTE && preference == BackendPreference.AUTO
+
+    return isAutoPaste && (hasSshConnection || hasSshClient)
 }
 
 /**
