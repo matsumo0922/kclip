@@ -14,6 +14,8 @@ data class LocalAttachmentMetadata(
     val attachmentId: AttachmentId,
     val agentProcessId: Int,
     val destination: String,
+    val transportKind: AttachTransportKind,
+    val remoteSocketPath: String,
     val localSocketPath: String,
     val controlPath: String,
     val controlSecret: Secret16,
@@ -24,12 +26,17 @@ data class LocalAttachmentMetadata(
  * local attachment metadata の text codec。
  */
 object LocalAttachmentMetadataCodec {
+    /** 旧 metadata に remote socket path が存在しない場合の互換値。 */
+    private const val LEGACY_REMOTE_SOCKET_PATH = ""
+
     fun encode(metadata: LocalAttachmentMetadata): ByteArray {
         val lines = listOf(
             "version=1",
             "attachmentId=${metadata.attachmentId.value}",
             "agentProcessId=${metadata.agentProcessId}",
             "destination=${metadata.destination}",
+            "transport=${metadata.transportKind.metadataValue}",
+            "remoteSocketPath=${metadata.remoteSocketPath}",
             "localSocketPath=${metadata.localSocketPath}",
             "controlPath=${metadata.controlPath}",
             "controlSecret=${MetadataHexCodec.encode(metadata.controlSecret.copyBytes())}",
@@ -71,6 +78,8 @@ object LocalAttachmentMetadataCodec {
                 agentProcessId = required(values, "agentProcessId").toIntOrNull()
                     ?: return invalidMetadata("agentProcessId must be an integer"),
                 destination = required(values, "destination"),
+                transportKind = AttachTransportKind.fromMetadata(values["transport"]),
+                remoteSocketPath = values["remoteSocketPath"] ?: LEGACY_REMOTE_SOCKET_PATH,
                 localSocketPath = required(values, "localSocketPath"),
                 controlPath = required(values, "controlPath"),
                 controlSecret = when (val outcome = decodeSecret(values, "controlSecret")) {

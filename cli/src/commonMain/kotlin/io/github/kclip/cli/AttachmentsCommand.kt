@@ -2,10 +2,9 @@ package io.github.kclip.cli
 
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.parameters.arguments.argument
-import io.github.kclip.core.domain.AttachmentId
-import io.github.kclip.core.domain.KclipError
+import com.github.ajalt.clikt.parameters.options.default
+import com.github.ajalt.clikt.parameters.options.option
 import io.github.kclip.core.domain.Outcome
-import io.github.kclip.core.platform.CommandSpec
 import io.github.kclip.core.platform.PlatformServices
 
 /**
@@ -27,10 +26,25 @@ class AttachmentsCommand(
             return
         }
 
+        val forwardingController = sshForwardingController()
         for (entry in metadata) {
             val paste = if (entry.allowsPaste) "paste=allow" else "paste=deny"
-            echo("${entry.attachmentId.displayValue()}  $paste  ${entry.destination}")
+            val health = when (val outcome = forwardingController.health(entry)) {
+                is Outcome.Ok -> outcome.value.displayValue
+                is Outcome.Err -> AttachTransportHealth.DEGRADED.displayValue
+            }
+            echo("${entry.attachmentId.displayValue()}  ${entry.transportKind.metadataValue}  $paste  $health  ${entry.destination}")
         }
+    }
+
+    private fun sshForwardingController(): SshForwardingController {
+        return SshForwardingController(
+            commandRunner = platformServices.commandRunner,
+            environment = platformServices.environment,
+            fileStore = platformServices.fileStore,
+            sleeper = platformServices.sleeper,
+            sshExecutable = "/usr/bin/ssh",
+        )
     }
 }
 
@@ -45,71 +59,88 @@ class DetachCommand(
     private val attachment by argument("attachment-id")
 
     override fun run() {
-        val attachmentId = when (val outcome = AttachmentId.parse(attachment)) {
+        val store = LocalAttachmentMetadataStore(platformServices)
+        val attachmentId = when (val outcome = resolveLocalAttachmentId(attachment, store)) {
             is Outcome.Ok -> outcome.value
             is Outcome.Err -> exitWith(outcome.error)
         }
-        val store = LocalAttachmentMetadataStore(platformServices)
         val metadata = when (val outcome = store.read(attachmentId)) {
             is Outcome.Ok -> outcome.value
             is Outcome.Err -> exitWith(outcome.error)
         }
 
         val agentStop = stopAgent(metadata)
-        val sshStop = stopSshMaster(metadata)
+        val sshStop = sshForwardingController().detach(metadata)
         platformServices.fileStore.delete(metadata.localSocketPath)
         store.delete(attachmentId)
         if (agentStop is Outcome.Err) {
             exitWith(agentStop.error)
         }
         if (sshStop is Outcome.Err) {
+            if (metadata.transportKind == AttachTransportKind.CONTROLMASTER) {
+                echo("warning: ${sshStop.error.message}", err = true)
+                echo("Detached ${attachmentId.displayValue()}.")
+
+                return
+            }
+
             exitWith(sshStop.error)
         }
 
         echo("Detached ${attachmentId.displayValue()}.")
     }
 
-    private fun stopSshMaster(metadata: LocalAttachmentMetadata): Outcome<Unit> {
-        val output = platformServices.commandRunner.run(
-            spec = CommandSpec(
-                executable = "/usr/bin/ssh",
-                arguments = listOf(
-                    "-S",
-                    metadata.controlPath,
-                    "-o",
-                    "BatchMode=yes",
-                    "-o",
-                    "ConnectTimeout=8",
-                    "-O",
-                    "exit",
-                    metadata.destination,
-                ),
-                environment = platformServices.environment.snapshot(),
-                timeoutMillis = SSH_TIMEOUT_MILLIS,
-            ),
-            stdin = null,
+    private fun sshForwardingController(): SshForwardingController {
+        return SshForwardingController(
+            commandRunner = platformServices.commandRunner,
+            environment = platformServices.environment,
+            fileStore = platformServices.fileStore,
+            sleeper = platformServices.sleeper,
+            sshExecutable = "/usr/bin/ssh",
         )
-        if (output is Outcome.Err) {
-            return output
-        }
-        val commandOutput = (output as Outcome.Ok).value
-        if (commandOutput.exitStatus != 0) {
-            return Outcome.Err(
-                KclipError.ForwardingRejected(
-                    message = "failed to stop dedicated SSH master",
-                    detail = commandOutput.stderr.decodeToString(),
-                ),
-            )
-        }
-
-        return Outcome.Ok(Unit)
     }
 
     private fun stopAgent(metadata: LocalAttachmentMetadata): Outcome<Unit> {
         return shutdownLocalAgent(metadata, platformServices)
     }
+}
 
-    private companion object {
-        const val SSH_TIMEOUT_MILLIS = 10_000L
+/**
+ * local attachment の SSH forwarding を metadata から再作成する command。
+ */
+class ReconnectCommand(
+    private val platformServices: PlatformServices,
+) : CliktCommand(
+    name = "reconnect",
+) {
+    private val attachment by argument("attachment-id")
+    private val sshExecutable by option("--ssh", "--ssh-executable").default("/usr/bin/ssh")
+
+    override fun run() {
+        val store = LocalAttachmentMetadataStore(platformServices)
+        val attachmentId = when (val outcome = resolveLocalAttachmentId(attachment, store)) {
+            is Outcome.Ok -> outcome.value
+            is Outcome.Err -> exitWith(outcome.error)
+        }
+        val metadata = when (val outcome = store.read(attachmentId)) {
+            is Outcome.Ok -> outcome.value
+            is Outcome.Err -> exitWith(outcome.error)
+        }
+        val reconnect = sshForwardingController().reconnect(metadata)
+        if (reconnect is Outcome.Err) {
+            exitWith(reconnect.error)
+        }
+
+        echo("Reconnected ${attachmentId.displayValue()} using ${metadata.transportKind.metadataValue} transport.")
+    }
+
+    private fun sshForwardingController(): SshForwardingController {
+        return SshForwardingController(
+            commandRunner = platformServices.commandRunner,
+            environment = platformServices.environment,
+            fileStore = platformServices.fileStore,
+            sleeper = platformServices.sleeper,
+            sshExecutable = sshExecutable,
+        )
     }
 }

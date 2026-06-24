@@ -11,6 +11,7 @@ import io.github.kclip.cli.DetachCommand
 import io.github.kclip.cli.DoctorCommand
 import io.github.kclip.cli.PairCommand
 import io.github.kclip.cli.PasteCommand
+import io.github.kclip.cli.ReconnectCommand
 import io.github.kclip.cli.VersionCommand
 import io.github.kclip.core.platform.createPlatformServices
 
@@ -25,6 +26,7 @@ fun main(args: Array<String>) {
             AttachCommand(platformServices),
             AttachmentsCommand(platformServices),
             DetachCommand(platformServices),
+            ReconnectCommand(platformServices),
             AttachAgentCommand(platformServices),
             VersionCommand(),
             DoctorCommand(platformServices),
