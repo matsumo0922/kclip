@@ -4567,15 +4567,14 @@ kclip/
 ```text
 kclip.primitive.kmp.common
   - org.jetbrains.kotlin.multiplatform
-  - applyDefaultHierarchyTemplate()
   - Kotlin BOM
 
 kclip.primitive.kmp.unix-native
   - macosArm64()
   - linuxX64()
   - linuxArm64()
-  - unixMain / macosMain / linuxMain hierarchy
-  - kotlinx.cinterop.ExperimentalForeignApi opt-in は unix source set に限定
+  - explicit unixMain / macosMain / linuxMain hierarchy
+  - kotlinx.cinterop.ExperimentalForeignApi opt-in は cinterop 利用箇所に限定
 
 kclip.primitive.kmp.executable
   - kclip executable binary
