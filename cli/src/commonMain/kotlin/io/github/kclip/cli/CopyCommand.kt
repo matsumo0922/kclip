@@ -7,6 +7,7 @@ import com.github.ajalt.clikt.parameters.types.int
 import io.github.kclip.core.application.CopyOptions
 import io.github.kclip.core.application.CopyUseCase
 import io.github.kclip.core.application.DefaultClipboardLimits
+import io.github.kclip.core.domain.AttachmentId
 import io.github.kclip.core.domain.ClipboardPayload
 import io.github.kclip.core.domain.Outcome
 import io.github.kclip.core.platform.PlatformServices
@@ -20,6 +21,7 @@ class CopyCommand(
     name = "copy",
 ) {
     private val backend by option("--backend").default("auto")
+    private val attachment by option("--attachment")
     private val maxBytes by option("--max-bytes").int().default(DefaultClipboardLimits.MAX_BYTES)
 
     override fun run() {
@@ -27,6 +29,7 @@ class CopyCommand(
             is Outcome.Ok -> outcome.value
             is Outcome.Err -> exitWith(outcome.error)
         }
+        val attachmentId = parseAttachmentId(attachment)
         val bytes = when (val outcome = platformServices.standardInput.readAll(maxBytes)) {
             is Outcome.Ok -> outcome.value
             is Outcome.Err -> exitWith(outcome.error)
@@ -39,10 +42,26 @@ class CopyCommand(
             backendPreference = backendPreference,
             maxBytes = maxBytes,
         )
-        val useCase = CopyUseCase(platformServices.clipboardBackendResolver)
+        val backendOutcome = resolveClipboardBackend(backendPreference, attachmentId, platformServices)
+        val backend = when (backendOutcome) {
+            is Outcome.Ok -> backendOutcome.value
+            is Outcome.Err -> exitWith(backendOutcome.error)
+        }
+        val useCase = CopyUseCase(
+            backendResolver = FixedClipboardBackendResolver(backend),
+        )
         val result = useCase.execute(options, payload)
         if (result is Outcome.Err) {
             exitWith(result.error)
+        }
+    }
+
+    private fun parseAttachmentId(value: String?): AttachmentId? {
+        if (value == null) return null
+
+        return when (val outcome = AttachmentId.parse(value)) {
+            is Outcome.Ok -> outcome.value
+            is Outcome.Err -> exitWith(outcome.error)
         }
     }
 }

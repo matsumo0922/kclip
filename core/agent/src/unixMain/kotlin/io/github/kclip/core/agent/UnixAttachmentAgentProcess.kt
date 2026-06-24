@@ -1,5 +1,6 @@
 package io.github.kclip.core.agent
 
+import io.github.kclip.core.domain.KclipError
 import io.github.kclip.core.domain.Outcome
 
 /**
@@ -7,6 +8,10 @@ import io.github.kclip.core.domain.Outcome
  */
 class UnixAttachmentAgentProcess : AttachmentAgentLauncher {
     override fun launch(): Outcome<AgentStatusSnapshot> {
-        return AttachmentAgent().status()
+        return Outcome.Err(
+            KclipError.Internal(
+                message = "UnixAttachmentAgentProcess is replaced by BackgroundProcessLauncher",
+            ),
+        )
     }
 }

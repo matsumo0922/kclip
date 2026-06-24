@@ -13,7 +13,29 @@ class UnixEnvironment : Environment {
     }
 
     override fun snapshot(): Map<String, String> {
-        return emptyMap()
+        return SNAPSHOT_NAMES
+            .mapNotNull { name -> get(name)?.let { value -> name to value } }
+            .toMap()
+    }
+
+    private companion object {
+        val SNAPSHOT_NAMES = listOf(
+            "__CF_USER_TEXT_ENCODING",
+            "DBUS_SESSION_BUS_ADDRESS",
+            "DISPLAY",
+            "HOME",
+            "LANG",
+            "LC_ALL",
+            "LC_CTYPE",
+            "LOGNAME",
+            "PATH",
+            "SSH_AUTH_SOCK",
+            "TMPDIR",
+            "USER",
+            "WAYLAND_DISPLAY",
+            "XAUTHORITY",
+            "XDG_RUNTIME_DIR",
+        )
     }
 }
 

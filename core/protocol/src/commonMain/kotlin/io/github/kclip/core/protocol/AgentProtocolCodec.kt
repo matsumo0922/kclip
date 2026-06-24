@@ -3,6 +3,7 @@ package io.github.kclip.core.protocol
 import io.github.kclip.core.domain.Deadline
 import io.github.kclip.core.domain.KclipError
 import io.github.kclip.core.domain.Outcome
+import io.github.kclip.core.domain.ProtocolByteChannel
 import io.github.kclip.core.domain.Secret16
 
 /**
@@ -72,20 +73,6 @@ data class ProtocolLimits(
 ) {
     val maxResponseBodyBytes: Int
         get() = maxOf(maxPasteBytes, maxPingBytes, maxErrorBodyBytes)
-}
-
-/**
- * protocol codec が必要とする最小 byte channel。
- */
-interface ProtocolByteChannel {
-    fun read(
-        destination: ByteArray,
-        offset: Int,
-        length: Int,
-        deadline: Deadline,
-    ): Outcome<Int>
-
-    fun writeAll(source: ByteArray, deadline: Deadline): Outcome<Unit>
 }
 
 /**
