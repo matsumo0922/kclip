@@ -99,11 +99,39 @@ interface SecureRandom {
 interface FileStore {
     fun exists(path: String): Outcome<Boolean>
 
+    fun lstat(path: String): Outcome<FileMetadata>
+
     fun readBytes(path: String, maxBytes: Int): Outcome<ByteArray>
 
     fun writePrivateBytes(path: String, bytes: ByteArray): Outcome<Unit>
 
     fun delete(path: String): Outcome<Unit>
+}
+
+/**
+ * symlink を辿らない file metadata。
+ */
+data class FileMetadata(
+    val ownerUid: ULong,
+    val permissionMode: UInt,
+    val type: FileType,
+)
+
+/**
+ * file system entry の種別。
+ */
+enum class FileType {
+    /** 通常 file。 */
+    REGULAR,
+
+    /** directory。 */
+    DIRECTORY,
+
+    /** Unix domain socket。 */
+    SOCKET,
+
+    /** kclip が特別扱いしないその他の entry。 */
+    OTHER,
 }
 
 /**

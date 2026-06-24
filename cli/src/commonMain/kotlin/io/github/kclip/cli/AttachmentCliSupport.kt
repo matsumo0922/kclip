@@ -116,6 +116,37 @@ fun remotePairEndpoint(material: PairingMaterial): IpcEndpoint.UnixSocket {
 }
 
 /**
+ * full ID または表示用 ID から local attachment ID を解決する helper。
+ */
+fun resolveLocalAttachmentId(value: String, store: LocalAttachmentMetadataStore): Outcome<AttachmentId> {
+    val parsed = AttachmentId.parse(value)
+    if (parsed is Outcome.Ok) {
+        return parsed
+    }
+    val displayValue = if (value.uppercase().startsWith(ATTACHMENT_DISPLAY_PREFIX)) {
+        value.uppercase()
+    } else {
+        "$ATTACHMENT_DISPLAY_PREFIX${value.uppercase()}"
+    }
+    val metadata = when (val outcome = store.list()) {
+        is Outcome.Ok -> outcome.value
+        is Outcome.Err -> return outcome
+    }
+    val matches = metadata.filter { entry -> entry.attachmentId.displayValue() == displayValue }
+
+    return when (matches.size) {
+        1 -> Outcome.Ok(matches.first().attachmentId)
+        0 -> parsed
+        else -> Outcome.Err(
+            KclipError.InvalidInput(
+                message = "attachment id prefix is ambiguous",
+                detail = "use the full attachment id from the metadata file",
+            ),
+        )
+    }
+}
+
+/**
  * local agent に shutdown を要求する helper。
  */
 fun shutdownLocalAgent(metadata: LocalAttachmentMetadata, platformServices: PlatformServices): Outcome<Unit> {
@@ -161,3 +192,6 @@ fun shutdownLocalAgent(metadata: LocalAttachmentMetadata, platformServices: Plat
 }
 
 private const val LOCAL_AGENT_TIMEOUT_MILLIS = 5_000L
+
+/** attachment 表示用 ID の prefix。 */
+private const val ATTACHMENT_DISPLAY_PREFIX = "KC-"
