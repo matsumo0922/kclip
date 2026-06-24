@@ -1,5 +1,6 @@
 package io.github.kclip.core.platform
 
+import io.github.kclip.core.domain.ClipboardBackendResolver
 import io.github.kclip.core.domain.Deadline
 import io.github.kclip.core.domain.Outcome
 
@@ -9,6 +10,9 @@ import io.github.kclip.core.domain.Outcome
 data class PlatformServices(
     val environment: Environment,
     val clock: MonotonicClock,
+    val standardInput: ByteInput,
+    val standardOutput: ByteOutput,
+    val clipboardBackendResolver: ClipboardBackendResolver,
 )
 
 /**

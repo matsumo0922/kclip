@@ -27,6 +27,25 @@ enum class ClipboardCapability {
 }
 
 /**
+ * clipboard の読み書きを行う backend。
+ */
+interface ClipboardBackend {
+    val id: String
+    val capabilities: Set<ClipboardCapability>
+
+    fun copy(payload: ClipboardPayload): Outcome<Unit>
+
+    fun paste(maxBytes: Int): Outcome<ClipboardPayload>
+}
+
+/**
+ * 利用者指定や環境に応じて clipboard backend を解決する component。
+ */
+interface ClipboardBackendResolver {
+    fun resolve(preference: BackendPreference): Outcome<ClipboardBackend>
+}
+
+/**
  * UTF-8 text/plain として扱う clipboard payload。
  */
 class ClipboardPayload private constructor(
