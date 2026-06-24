@@ -55,15 +55,21 @@ class DetachCommand(
             is Outcome.Err -> exitWith(outcome.error)
         }
 
-        stopSshMaster(metadata)
-        stopAgent(metadata)
+        val agentStop = stopAgent(metadata)
+        val sshStop = stopSshMaster(metadata)
         platformServices.fileStore.delete(metadata.localSocketPath)
         store.delete(attachmentId)
+        if (agentStop is Outcome.Err) {
+            exitWith(agentStop.error)
+        }
+        if (sshStop is Outcome.Err) {
+            exitWith(sshStop.error)
+        }
 
         echo("Detached ${attachmentId.displayValue()}.")
     }
 
-    private fun stopSshMaster(metadata: LocalAttachmentMetadata) {
+    private fun stopSshMaster(metadata: LocalAttachmentMetadata): Outcome<Unit> {
         val output = platformServices.commandRunner.run(
             spec = CommandSpec(
                 executable = "/usr/bin/ssh",
@@ -84,24 +90,23 @@ class DetachCommand(
             stdin = null,
         )
         if (output is Outcome.Err) {
-            exitWith(output.error)
+            return output
         }
         val commandOutput = (output as Outcome.Ok).value
         if (commandOutput.exitStatus != 0) {
-            exitWith(
+            return Outcome.Err(
                 KclipError.ForwardingRejected(
                     message = "failed to stop dedicated SSH master",
                     detail = commandOutput.stderr.decodeToString(),
                 ),
             )
         }
+
+        return Outcome.Ok(Unit)
     }
 
-    private fun stopAgent(metadata: LocalAttachmentMetadata) {
-        val shutdown = shutdownLocalAgent(metadata, platformServices)
-        if (shutdown is Outcome.Err) {
-            exitWith(shutdown.error)
-        }
+    private fun stopAgent(metadata: LocalAttachmentMetadata): Outcome<Unit> {
+        return shutdownLocalAgent(metadata, platformServices)
     }
 
     private companion object {
