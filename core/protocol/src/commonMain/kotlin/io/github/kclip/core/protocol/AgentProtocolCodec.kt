@@ -255,6 +255,7 @@ class DefaultAgentProtocolCodec : AgentProtocolCodec {
             AgentOperation.COPY -> limits.maxCopyBytes
             AgentOperation.PASTE -> 0
             AgentOperation.PING -> 0
+            AgentOperation.SHUTDOWN -> 0
         }
         if (payloadLength > maxBytes.toUInt()) {
             return tooLarge(payloadLength, maxBytes)
@@ -275,7 +276,8 @@ class DefaultAgentProtocolCodec : AgentProtocolCodec {
         if (operation == AgentOperation.PAIR_CONFIRM && payload.size != SECRET_BYTES) {
             return protocolFailure("PAIR_CONFIRM body must be 16 bytes")
         }
-        val expectsEmptyBody = operation == AgentOperation.PASTE || operation == AgentOperation.PING
+        val emptyBodyOperations = setOf(AgentOperation.PASTE, AgentOperation.PING, AgentOperation.SHUTDOWN)
+        val expectsEmptyBody = operation in emptyBodyOperations
         if (expectsEmptyBody && payload.isNotEmpty()) {
             return protocolFailure("${operation.name} request body must be empty")
         }

@@ -37,6 +37,7 @@ class AttachmentAgentCapabilityTest {
                 expectedPairCredential = pairCredential,
                 attachmentId = attachmentId(),
                 attachmentNonce = attachmentNonce,
+                controlSecret = secret(value = 3),
                 allowPaste = true,
             ),
             ipcServer = UnusedIpcServer,

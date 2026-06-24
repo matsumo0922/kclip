@@ -43,6 +43,7 @@ data class AttachmentAgentConfig(
     val expectedPairCredential: PairCredential,
     val attachmentId: AttachmentId,
     val attachmentNonce: Secret16,
+    val controlSecret: Secret16,
     val allowPaste: Boolean,
     val maxCopyBytes: Int = DefaultClipboardLimits.MAX_BYTES,
     val maxPasteBytes: Int = DefaultClipboardLimits.MAX_BYTES,
@@ -121,6 +122,7 @@ class AttachmentAgent(
             AgentOperation.COPY -> handleCopy(request)
             AgentOperation.PASTE -> handlePaste(request)
             AgentOperation.PING -> handlePing(request)
+            AgentOperation.SHUTDOWN -> handleShutdown(request)
         }
     }
 
@@ -224,6 +226,15 @@ class AttachmentAgent(
         return okResponse("state=ACTIVE\n".encodeToByteArray())
     }
 
+    private fun handleShutdown(request: AgentRequest): AgentResponse {
+        if (!config.controlSecret.constantTimeEquals(request.credential.copyBytes())) {
+            return errorResponse(AgentStatus.UNAUTHORIZED, "control secret was rejected")
+        }
+
+        state = AgentLifecycleState.STOPPING
+        return okResponse(ByteArray(size = 0))
+    }
+
     private fun hasPairCredential(request: AgentRequest): Boolean {
         return config.expectedPairCredential.secret.constantTimeEquals(request.credential.copyBytes())
     }
@@ -290,6 +301,7 @@ object AttachmentAgentConfigCodec {
             "pairCredential=${HexCodec.encode(config.expectedPairCredential.secret.copyBytes())}",
             "attachmentId=${config.attachmentId.value}",
             "attachmentNonce=${HexCodec.encode(config.attachmentNonce.copyBytes())}",
+            "controlSecret=${HexCodec.encode(config.controlSecret.copyBytes())}",
             "allowPaste=${config.allowPaste}",
             "maxCopyBytes=${config.maxCopyBytes}",
             "maxPasteBytes=${config.maxPasteBytes}",
@@ -351,6 +363,10 @@ object AttachmentAgentConfigCodec {
             is Outcome.Ok -> outcome.value
             is Outcome.Err -> return outcome
         }
+        val controlSecret = when (val outcome = decodeSecret(values, "controlSecret")) {
+            is Outcome.Ok -> outcome.value
+            is Outcome.Err -> return outcome
+        }
 
         return Outcome.Ok(
             AttachmentAgentConfig(
@@ -358,6 +374,7 @@ object AttachmentAgentConfigCodec {
                 expectedPairCredential = pairCredential,
                 attachmentId = attachmentId,
                 attachmentNonce = attachmentNonce,
+                controlSecret = controlSecret,
                 allowPaste = allowPasteText.toBooleanStrictOrNull() ?: false,
                 maxCopyBytes = maxCopyBytes,
                 maxPasteBytes = maxPasteBytes,

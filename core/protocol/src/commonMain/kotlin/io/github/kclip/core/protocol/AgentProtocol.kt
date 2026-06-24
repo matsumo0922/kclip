@@ -24,6 +24,7 @@ enum class AgentOperation(
     COPY(3u),
     PASTE(4u),
     PING(5u),
+    SHUTDOWN(6u),
     ;
 
     companion object {

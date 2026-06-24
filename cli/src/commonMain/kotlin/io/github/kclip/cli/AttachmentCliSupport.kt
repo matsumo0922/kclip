@@ -12,6 +12,11 @@ import io.github.kclip.core.domain.Outcome
 import io.github.kclip.core.domain.PairingMaterial
 import io.github.kclip.core.platform.Environment
 import io.github.kclip.core.platform.PlatformServices
+import io.github.kclip.core.protocol.AgentOperation
+import io.github.kclip.core.protocol.AgentProtocolVersion
+import io.github.kclip.core.protocol.AgentRequest
+import io.github.kclip.core.protocol.AgentStatus
+import io.github.kclip.core.protocol.DefaultAgentProtocolCodec
 
 /**
  * pair code から導出される remote Unix socket path。
@@ -109,3 +114,50 @@ internal fun requiresAttachmentForMissingBinding(
 fun remotePairEndpoint(material: PairingMaterial): IpcEndpoint.UnixSocket {
     return IpcEndpoint.UnixSocket(remoteSocketPath(material))
 }
+
+/**
+ * local agent に shutdown を要求する helper。
+ */
+fun shutdownLocalAgent(metadata: LocalAttachmentMetadata, platformServices: PlatformServices): Outcome<Unit> {
+    val deadline = platformServices.clock.deadlineAfterMillis(LOCAL_AGENT_TIMEOUT_MILLIS)
+    val endpoint = IpcEndpoint.UnixSocket(metadata.localSocketPath)
+    val channel = when (val outcome = platformServices.ipcConnector.connect(endpoint, deadline)) {
+        is Outcome.Ok -> outcome.value
+        is Outcome.Err -> return Outcome.Ok(Unit)
+    }
+    val codec = DefaultAgentProtocolCodec()
+    val write = codec.writeRequest(
+        channel = channel,
+        request = AgentRequest(
+            version = AgentProtocolVersion.CURRENT,
+            operation = AgentOperation.SHUTDOWN,
+            credential = metadata.controlSecret,
+            payload = ByteArray(size = 0),
+        ),
+        deadline = deadline,
+    )
+    if (write is Outcome.Err) {
+        channel.close()
+
+        return write
+    }
+
+    val response = codec.readResponse(channel, deadline)
+    channel.close()
+    if (response is Outcome.Err) {
+        return response
+    }
+    val value = (response as Outcome.Ok).value
+    if (value.status != AgentStatus.OK) {
+        return Outcome.Err(
+            KclipError.ProtocolFailure(
+                message = "attachment agent rejected shutdown",
+                detail = value.payload.decodeToString(),
+            ),
+        )
+    }
+
+    return Outcome.Ok(Unit)
+}
+
+private const val LOCAL_AGENT_TIMEOUT_MILLIS = 5_000L

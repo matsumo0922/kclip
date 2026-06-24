@@ -46,12 +46,14 @@ class AttachCommand(
         val allowPaste = parsePasteMode()
         val attachmentId = createAttachmentId()
         val attachmentNonce = createAttachmentNonce()
+        val controlSecret = createAttachmentNonce()
         val localEndpoint = createLocalEndpoint(attachmentId)
         val config = AttachmentAgentConfig(
             endpoint = localEndpoint,
             expectedPairCredential = material.credential,
             attachmentId = attachmentId,
             attachmentNonce = attachmentNonce,
+            controlSecret = controlSecret,
             allowPaste = allowPaste,
         )
         val controlPath = createControlPath(attachmentId)
@@ -63,6 +65,7 @@ class AttachCommand(
             destination = destination,
             localSocketPath = localEndpoint.path,
             controlPath = controlPath,
+            controlSecret = controlSecret,
             allowsPaste = allowPaste,
         )
         val forwarding = startDedicatedForwarding(material, localEndpoint, controlPath)
@@ -327,7 +330,7 @@ class AttachCommand(
 
     private fun cleanupPartialAttachment(metadata: LocalAttachmentMetadata) {
         stopSshMaster(metadata.controlPath)
-        stopAgent(metadata.agentProcessId)
+        shutdownLocalAgent(metadata, platformServices)
         platformServices.fileStore.delete(metadata.localSocketPath)
         platformServices.fileStore.delete(metadata.controlPath)
         LocalAttachmentMetadataStore(platformServices).delete(metadata.attachmentId)
@@ -356,19 +359,6 @@ class AttachCommand(
         )
     }
 
-    private fun stopAgent(processId: Int) {
-        platformServices.commandRunner.run(
-            spec = CommandSpec(
-                executable = "/bin/kill",
-                arguments = listOf(processId.toString()),
-                environment = platformServices.environment.snapshot(),
-                timeoutMillis = KILL_TIMEOUT_MILLIS,
-                maxStderrBytes = MAX_SSH_STDERR_BYTES,
-            ),
-            stdin = null,
-        )
-    }
-
     private fun capabilities(allowPaste: Boolean): Set<ClipboardCapability> {
         val capabilities = mutableSetOf(ClipboardCapability.COPY)
         if (allowPaste) {
@@ -380,7 +370,6 @@ class AttachCommand(
 
     private companion object {
         const val ATTACH_TIMEOUT_MILLIS = 10 * 60 * 1_000L
-        const val KILL_TIMEOUT_MILLIS = 5_000L
         const val MAX_PAIRING_CODE_BYTES = 256
         const val MAX_SSH_STDERR_BYTES = 16 * 1024
         const val MILLIS_PER_SECOND = 1_000L

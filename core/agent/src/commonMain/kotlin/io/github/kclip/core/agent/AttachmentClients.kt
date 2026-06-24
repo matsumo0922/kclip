@@ -270,7 +270,11 @@ class FileAttachmentStateRepository(
         return writeBinding(binding)
     }
 
-    override fun rollback(lease: AttachmentLease, binding: AttachmentBinding): Outcome<Unit> {
+    override fun rollback(
+        lease: AttachmentLease,
+        binding: AttachmentBinding,
+        previousBinding: AttachmentBinding?,
+    ): Outcome<Unit> {
         val leasePath = when (val outcome = leasePath(lease.id)) {
             is Outcome.Ok -> outcome.value
             is Outcome.Err -> return outcome
@@ -282,6 +286,9 @@ class FileAttachmentStateRepository(
         val leaseDelete = fileStore.delete(leasePath)
         if (leaseDelete is Outcome.Err) {
             return leaseDelete
+        }
+        if (previousBinding != null) {
+            return writeBinding(previousBinding)
         }
 
         return fileStore.delete(bindingPath)

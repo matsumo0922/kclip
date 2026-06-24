@@ -4,6 +4,7 @@ import io.github.kclip.core.domain.AttachmentId
 import io.github.kclip.core.domain.ClipboardCapability
 import io.github.kclip.core.domain.KclipError
 import io.github.kclip.core.domain.Outcome
+import io.github.kclip.core.domain.Secret16
 import io.github.kclip.core.platform.PlatformServices
 
 /**
@@ -15,6 +16,7 @@ data class LocalAttachmentMetadata(
     val destination: String,
     val localSocketPath: String,
     val controlPath: String,
+    val controlSecret: Secret16,
     val allowsPaste: Boolean,
 )
 
@@ -30,6 +32,7 @@ object LocalAttachmentMetadataCodec {
             "destination=${metadata.destination}",
             "localSocketPath=${metadata.localSocketPath}",
             "controlPath=${metadata.controlPath}",
+            "controlSecret=${MetadataHexCodec.encode(metadata.controlSecret.copyBytes())}",
             "allowsPaste=${metadata.allowsPaste}",
         )
 
@@ -70,9 +73,22 @@ object LocalAttachmentMetadataCodec {
                 destination = required(values, "destination"),
                 localSocketPath = required(values, "localSocketPath"),
                 controlPath = required(values, "controlPath"),
+                controlSecret = when (val outcome = decodeSecret(values, "controlSecret")) {
+                    is Outcome.Ok -> outcome.value
+                    is Outcome.Err -> return outcome
+                },
                 allowsPaste = required(values, "allowsPaste").toBooleanStrictOrNull() ?: false,
             ),
         )
+    }
+
+    private fun decodeSecret(values: Map<String, String>, key: String): Outcome<Secret16> {
+        val bytes = when (val outcome = MetadataHexCodec.decode(required(values, key))) {
+            is Outcome.Ok -> outcome.value
+            is Outcome.Err -> return outcome
+        }
+
+        return Secret16.fromBytes(bytes)
     }
 
     private fun required(values: Map<String, String>, key: String): String {
@@ -187,4 +203,52 @@ class LocalAttachmentMetadataStore(
  */
 fun Set<ClipboardCapability>.allowsPaste(): Boolean {
     return ClipboardCapability.PASTE in this
+}
+
+/**
+ * metadata 用 hex codec。
+ */
+private object MetadataHexCodec {
+    private const val BYTE_MASK = 0xff
+    private const val HEX_BITS = 4
+    private const val HEX_ALPHABET = "0123456789ABCDEF"
+    private const val HEX_CHARS_PER_BYTE = 2
+
+    fun encode(bytes: ByteArray): String {
+        val output = StringBuilder(bytes.size * HEX_CHARS_PER_BYTE)
+        for (byteValue in bytes) {
+            val unsignedValue = byteValue.toInt() and BYTE_MASK
+            output.append(HEX_ALPHABET[unsignedValue ushr HEX_BITS])
+            output.append(HEX_ALPHABET[unsignedValue and 0x0f])
+        }
+
+        return output.toString()
+    }
+
+    fun decode(value: String): Outcome<ByteArray> {
+        val normalizedValue = value.uppercase()
+        if (normalizedValue.length % HEX_CHARS_PER_BYTE != 0) {
+            return invalidHex()
+        }
+        val output = ByteArray(normalizedValue.length / HEX_CHARS_PER_BYTE)
+        for (byteIndex in output.indices) {
+            val high = HEX_ALPHABET.indexOf(normalizedValue[byteIndex * HEX_CHARS_PER_BYTE])
+            val low = HEX_ALPHABET.indexOf(normalizedValue[byteIndex * HEX_CHARS_PER_BYTE + 1])
+            if (high < 0 || low < 0) {
+                return invalidHex()
+            }
+
+            output[byteIndex] = ((high shl HEX_BITS) or low).toByte()
+        }
+
+        return Outcome.Ok(output)
+    }
+
+    private fun invalidHex(): Outcome.Err {
+        return Outcome.Err(
+            KclipError.InvalidInput(
+                message = "invalid hex text",
+            ),
+        )
+    }
 }

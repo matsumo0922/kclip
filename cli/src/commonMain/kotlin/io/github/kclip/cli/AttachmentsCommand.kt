@@ -98,27 +98,13 @@ class DetachCommand(
     }
 
     private fun stopAgent(metadata: LocalAttachmentMetadata) {
-        val output = platformServices.commandRunner.run(
-            spec = CommandSpec(
-                executable = "/bin/kill",
-                arguments = listOf(metadata.agentProcessId.toString()),
-                environment = platformServices.environment.snapshot(),
-                timeoutMillis = KILL_TIMEOUT_MILLIS,
-            ),
-            stdin = null,
-        )
-        if (output is Outcome.Err) {
-            exitWith(output.error)
-        }
-        val commandOutput = (output as Outcome.Ok).value
-        val isMissingProcess = commandOutput.exitStatus != 0
-        if (isMissingProcess) {
-            echo("kclip: attachment agent was already stopped", err = true)
+        val shutdown = shutdownLocalAgent(metadata, platformServices)
+        if (shutdown is Outcome.Err) {
+            exitWith(shutdown.error)
         }
     }
 
     private companion object {
-        const val KILL_TIMEOUT_MILLIS = 5_000L
         const val SSH_TIMEOUT_MILLIS = 10_000L
     }
 }

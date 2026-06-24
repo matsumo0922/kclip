@@ -21,6 +21,7 @@ class AttachmentAgentConfigCodecTest {
             expectedPairCredential = PairCredential(secret(value = 1)),
             attachmentId = attachmentId(),
             attachmentNonce = secret(value = 2),
+            controlSecret = secret(value = 3),
             allowPaste = true,
             maxCopyBytes = 123,
             maxPasteBytes = 456,
@@ -37,6 +38,7 @@ class AttachmentAgentConfigCodecTest {
         assertEquals(config.maxPasteBytes, decoded.maxPasteBytes)
         assertTrue(config.expectedPairCredential.secret.constantTimeEquals(decoded.expectedPairCredential.secret.copyBytes()))
         assertTrue(config.attachmentNonce.constantTimeEquals(decoded.attachmentNonce.copyBytes()))
+        assertTrue(config.controlSecret.constantTimeEquals(decoded.controlSecret.copyBytes()))
     }
 
     @Test
@@ -47,6 +49,7 @@ class AttachmentAgentConfigCodecTest {
             socketPath=/tmp/kclip-test.sock
             attachmentId=000102030405060708090A0B0C0D0E0F
             attachmentNonce=000102030405060708090A0B0C0D0E0F
+            controlSecret=000102030405060708090A0B0C0D0E0F
             allowPaste=true
             maxCopyBytes=123
             maxPasteBytes=456

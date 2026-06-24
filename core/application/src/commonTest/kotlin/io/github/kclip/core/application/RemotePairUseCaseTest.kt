@@ -140,6 +140,44 @@ class RemotePairUseCaseTest {
         assertTrue(repository.rollbackCalled)
     }
 
+    @Test
+    fun executeRestoresPreviousBindingWhenReplaceConfirmFails() {
+        val material = pairingMaterial()
+        val previousBinding = AttachmentBinding(
+            attachmentId = acceptedFrame().attachmentId,
+            ttyIdentity = remotePairContext(material).ttyIdentity,
+        )
+        val repository = RecordingAttachmentStateRepository(
+            existingBinding = previousBinding,
+        )
+        val agentClient = FakePairAgentClient(
+            expectedCredential = material.credential,
+            acceptedFrame = acceptedFrame(),
+            repository = repository,
+            confirmResult = Outcome.Err(
+                KclipError.ProtocolFailure(
+                    message = "confirm failed",
+                ),
+            ),
+        )
+        val useCase = RemotePairUseCase(agentClient, repository)
+
+        val error = assertIs<Outcome.Err>(
+            useCase.execute(
+                options = PairOptions(
+                    requestPaste = true,
+                    replaceExisting = true,
+                ),
+                context = remotePairContext(material),
+            ),
+        ).error
+
+        assertIs<KclipError.ProtocolFailure>(error)
+        assertEquals(null, repository.lease)
+        assertEquals(previousBinding, repository.binding)
+        assertTrue(repository.rollbackCalled)
+    }
+
     private fun pairingMaterial(): PairingMaterial {
         return assertIs<Outcome.Ok<PairingMaterial>>(
             PairingMaterial.fromEntropy(ByteArray(size = 10) { index -> index.toByte() }),
@@ -203,10 +241,14 @@ private class RecordingAttachmentStateRepository(
         return Outcome.Ok(Unit)
     }
 
-    override fun rollback(lease: AttachmentLease, binding: AttachmentBinding): Outcome<Unit> {
+    override fun rollback(
+        lease: AttachmentLease,
+        binding: AttachmentBinding,
+        previousBinding: AttachmentBinding?,
+    ): Outcome<Unit> {
         rollbackCalled = true
         this.lease = null
-        this.binding = null
+        this.binding = previousBinding
 
         return Outcome.Ok(Unit)
     }

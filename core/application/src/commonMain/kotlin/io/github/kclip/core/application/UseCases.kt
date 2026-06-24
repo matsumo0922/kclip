@@ -155,7 +155,11 @@ interface AttachmentStateRepository {
 
     fun commit(lease: AttachmentLease, binding: AttachmentBinding): Outcome<Unit>
 
-    fun rollback(lease: AttachmentLease, binding: AttachmentBinding): Outcome<Unit>
+    fun rollback(
+        lease: AttachmentLease,
+        binding: AttachmentBinding,
+        previousBinding: AttachmentBinding?,
+    ): Outcome<Unit>
 }
 
 /**
@@ -170,7 +174,8 @@ class RemotePairUseCase(
         if (existingBinding is Outcome.Err) {
             return existingBinding
         }
-        val alreadyBound = (existingBinding as Outcome.Ok<AttachmentBinding?>).value != null
+        val previousBinding = (existingBinding as Outcome.Ok<AttachmentBinding?>).value
+        val alreadyBound = previousBinding != null
         if (alreadyBound && !options.replaceExisting) {
             return Outcome.Err(
                 KclipError.InvalidInput(
@@ -210,7 +215,7 @@ class RemotePairUseCase(
         }
         val confirm = agentClient.confirm(acceptedFrame)
         if (confirm is Outcome.Err) {
-            stateRepository.rollback(lease, binding)
+            stateRepository.rollback(lease, binding, previousBinding)
 
             return confirm
         }
