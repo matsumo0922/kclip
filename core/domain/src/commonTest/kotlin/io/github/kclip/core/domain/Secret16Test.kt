@@ -33,4 +33,14 @@ class Secret16Test {
         assertTrue(secret.constantTimeEquals(same))
         assertFalse(secret.constantTimeEquals(different))
     }
+
+    @Test
+    fun destroyZeroizesSecretBytes() {
+        val bytes = ByteArray(size = 16) { index -> (index + 1).toByte() }
+        val secret = assertIs<Outcome.Ok<Secret16>>(Secret16.fromBytes(bytes)).value
+
+        secret.destroy()
+
+        assertTrue(secret.copyBytes().all { byteValue -> byteValue == 0.toByte() })
+    }
 }
