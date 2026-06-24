@@ -16,17 +16,23 @@ object ExitCodes {
     /** permission または capability 拒否を表す exit code。 */
     const val PERMISSION_DENIED = 4
 
-    /** session / protocol failure を表す exit code。 */
-    const val PROTOCOL = 5
+    /** attachment が利用不能または stale な場合の exit code。 */
+    const val ATTACHMENT = 5
+
+    /** agent protocol failure を表す exit code。 */
+    const val PROTOCOL = 6
+
+    /** SSH forwarding または transport failure を表す exit code。 */
+    const val FORWARDING = 7
 
     /** payload が大きすぎる場合の exit code。 */
-    const val TOO_LARGE = 6
+    const val TOO_LARGE = 8
 
     /** timeout を表す exit code。 */
-    const val TIMEOUT = 7
+    const val TIMEOUT = 9
 
     /** subprocess failure を表す exit code。 */
-    const val SUBPROCESS = 8
+    const val SUBPROCESS = 10
 
     /** internal software error を表す exit code。 */
     const val INTERNAL = 70
@@ -71,6 +77,17 @@ sealed interface KclipError {
     }
 
     /**
+     * attachment が存在しない、または stale な場合の失敗。
+     */
+    data class AttachmentUnavailable(
+        val attachmentId: AttachmentId?,
+        override val message: String,
+        override val detail: String? = null,
+    ) : KclipError {
+        override val exitCode: Int = ExitCodes.ATTACHMENT
+    }
+
+    /**
      * agent protocol または attachment state が壊れている場合の失敗。
      */
     data class ProtocolFailure(
@@ -78,6 +95,16 @@ sealed interface KclipError {
         override val detail: String? = null,
     ) : KclipError {
         override val exitCode: Int = ExitCodes.PROTOCOL
+    }
+
+    /**
+     * SSH forwarding または transport が拒否された場合の失敗。
+     */
+    data class ForwardingRejected(
+        override val message: String,
+        override val detail: String? = null,
+    ) : KclipError {
+        override val exitCode: Int = ExitCodes.FORWARDING
     }
 
     /**
