@@ -1,0 +1,3 @@
+headers = kclip_spawn.h
+package = io.github.kclip.core.platform.spawn
+compilerOpts = -Isrc/nativeInterop/cinterop

@@ -2,25 +2,36 @@ package io.github.kclip.core.application
 
 import io.github.kclip.core.domain.AttachmentId
 import io.github.kclip.core.domain.BackendPreference
+import io.github.kclip.core.domain.ClipboardBackendResolver
 import io.github.kclip.core.domain.ClipboardPayload
+import io.github.kclip.core.domain.KclipError
 import io.github.kclip.core.domain.Outcome
 import io.github.kclip.core.domain.PairingCode
+import io.github.kclip.core.domain.flatMap
 
 /**
  * copy command の実行 option。
  */
 data class CopyOptions(
-    val backendPreference: BackendPreference,
-    val maxBytes: Int,
+    val backendPreference: BackendPreference = BackendPreference.AUTO,
+    val maxBytes: Int = DefaultClipboardLimits.MAX_BYTES,
 )
 
 /**
  * paste command の実行 option。
  */
 data class PasteOptions(
-    val backendPreference: BackendPreference,
-    val maxBytes: Int,
+    val backendPreference: BackendPreference = BackendPreference.AUTO,
+    val maxBytes: Int = DefaultClipboardLimits.MAX_BYTES,
 )
+
+/**
+ * clipboard payload の既定制限値。
+ */
+object DefaultClipboardLimits {
+    /** 既定の copy/paste 最大 byte 数。 */
+    const val MAX_BYTES = 1 * 1024 * 1024
+}
 
 /**
  * pair command の実行 option。
@@ -40,30 +51,38 @@ data class AttachOptions(
 )
 
 /**
- * Phase 0 の placeholder copy use case。
+ * clipboard へ payload を書き込む use case。
  */
-class CopyUseCase {
+class CopyUseCase(
+    private val backendResolver: ClipboardBackendResolver,
+) {
     fun execute(options: CopyOptions, payload: ClipboardPayload): Outcome<Unit> {
         val hasSupportedSize = payload.size <= options.maxBytes
         if (!hasSupportedSize) {
             return Outcome.Err(
-                io.github.kclip.core.domain.KclipError.TooLarge(
+                KclipError.TooLarge(
                     actualBytes = payload.size.toLong(),
                     maxBytes = options.maxBytes,
                 ),
             )
         }
 
-        return Outcome.Ok(Unit)
+        return backendResolver
+            .resolve(options.backendPreference)
+            .flatMap { backend -> backend.copy(payload) }
     }
 }
 
 /**
- * Phase 0 の placeholder paste use case。
+ * clipboard から payload を読み込む use case。
  */
-class PasteUseCase {
+class PasteUseCase(
+    private val backendResolver: ClipboardBackendResolver,
+) {
     fun execute(options: PasteOptions): Outcome<ClipboardPayload> {
-        return ClipboardPayload.fromUtf8Bytes(ByteArray(size = 0), options.maxBytes)
+        return backendResolver
+            .resolve(options.backendPreference)
+            .flatMap { backend -> backend.paste(options.maxBytes) }
     }
 }
 

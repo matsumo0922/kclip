@@ -27,7 +27,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Validate macOS build
-        run: ./gradlew :core:domain:allTests :core:protocol:allTests :cli:linkDebugExecutableMacosArm64 detekt
+        run: ./gradlew :core:domain:allTests :core:application:allTests :core:platform:allTests :core:protocol:allTests :cli:linkDebugExecutableMacosArm64 detekt
 
   linux:
     name: Linux
@@ -46,7 +46,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Validate Linux build
-        run: ./gradlew :core:domain:linuxX64Test :core:protocol:linuxX64Test :cli:compileKotlinLinuxX64
+        run: ./gradlew :core:domain:linuxX64Test :core:application:linuxX64Test :core:platform:linuxX64Test :core:protocol:linuxX64Test :cli:compileKotlinLinuxX64
 
       - name: Install OpenSSH server
         run: |

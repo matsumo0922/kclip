@@ -8,14 +8,15 @@ data class DoctorReport(
 )
 
 /**
- * Phase 0 の最小 doctor report を生成する component。
+ * local diagnostics report を生成する component。
  */
 class Doctor {
-    fun createLocalReport(): DoctorReport {
+    fun createLocalReport(clipboardStatus: String): DoctorReport {
         return DoctorReport(
             lines = listOf(
                 "kclip",
-                "  status: bootstrap",
+                "  status: local",
+                "  clipboard: $clipboardStatus",
             ),
         )
     }
