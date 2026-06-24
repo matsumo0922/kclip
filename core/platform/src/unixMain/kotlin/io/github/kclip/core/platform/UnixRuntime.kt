@@ -5,11 +5,16 @@ package io.github.kclip.core.platform
 import io.github.kclip.core.domain.KclipError
 import io.github.kclip.core.domain.Outcome
 import io.github.kclip.core.platform.spawn.kclip_current_uid
+import io.github.kclip.core.platform.spawn.kclip_lstat_metadata
 import io.github.kclip.core.platform.spawn.kclip_open_private_write
 import kotlinx.cinterop.ByteVar
+import kotlinx.cinterop.IntVar
+import kotlinx.cinterop.UIntVar
+import kotlinx.cinterop.ULongVar
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.convert
+import kotlinx.cinterop.get
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.set
 import kotlinx.cinterop.toKString
@@ -118,6 +123,26 @@ class UnixFileStore : FileStore {
         return lastErrno("failed to inspect state file")
     }
 
+    override fun lstat(path: String): Outcome<FileMetadata> {
+        return memScoped {
+            val ownerUid = allocArray<ULongVar>(1)
+            val permissionMode = allocArray<UIntVar>(1)
+            val fileType = allocArray<IntVar>(1)
+            val result = kclip_lstat_metadata(path, ownerUid, permissionMode, fileType)
+            if (result != 0) {
+                return@memScoped lastErrno("failed to inspect file metadata")
+            }
+
+            Outcome.Ok(
+                FileMetadata(
+                    ownerUid = ownerUid[0],
+                    permissionMode = permissionMode[0],
+                    type = fileType[0].toFileType(),
+                ),
+            )
+        }
+    }
+
     override fun readBytes(path: String, maxBytes: Int): Outcome<ByteArray> {
         val fileDescriptor = open(path, O_RDONLY)
         if (fileDescriptor < 0) {
@@ -151,6 +176,15 @@ class UnixFileStore : FileStore {
         }
 
         return Outcome.Ok(Unit)
+    }
+}
+
+private fun Int.toFileType(): FileType {
+    return when (this) {
+        1 -> FileType.REGULAR
+        2 -> FileType.DIRECTORY
+        3 -> FileType.SOCKET
+        else -> FileType.OTHER
     }
 }
 

@@ -29,6 +29,7 @@ class AttachmentMetadataCodecTest {
         ).value
 
         assertEquals(AttachTransportKind.DEDICATED, metadata.transportKind)
+        assertEquals("dev", metadata.controlDestination)
         assertEquals("", metadata.remoteSocketPath)
     }
 
@@ -38,6 +39,7 @@ class AttachmentMetadataCodecTest {
             attachmentId = attachmentId(),
             agentProcessId = 456,
             destination = "dev",
+            controlDestination = "dev.example.com",
             transportKind = AttachTransportKind.CONTROLMASTER,
             remoteSocketPath = "/tmp/kclip-remote.sock",
             localSocketPath = "/tmp/kclip-local.sock",
@@ -50,6 +52,7 @@ class AttachmentMetadataCodecTest {
         ).value
 
         assertEquals(AttachTransportKind.CONTROLMASTER, decoded.transportKind)
+        assertEquals("dev.example.com", decoded.controlDestination)
         assertEquals("/tmp/kclip-remote.sock", decoded.remoteSocketPath)
         assertEquals("/tmp/ssh-control.sock", decoded.controlPath)
     }
@@ -63,6 +66,7 @@ class AttachmentMetadataCodecTest {
                 attachmentId=000102030405060708090A0B0C0D0E0F
                 agentProcessId=123
                 destination=dev
+                controlDestination=dev.example.com
                 transport=controlmaster
                 remoteSocketPath=/tmp/kclip-remote.sock
                 localSocketPath=/tmp/kclip-local.sock
@@ -75,6 +79,7 @@ class AttachmentMetadataCodecTest {
         ).value
 
         assertEquals(AttachTransportKind.CONTROLMASTER, metadata.transportKind)
+        assertEquals("dev.example.com", metadata.controlDestination)
         assertEquals("/tmp/kclip-remote.sock", metadata.remoteSocketPath)
     }
 

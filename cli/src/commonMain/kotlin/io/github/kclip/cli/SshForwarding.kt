@@ -7,6 +7,8 @@ import io.github.kclip.core.platform.CommandRunner
 import io.github.kclip.core.platform.CommandSpec
 import io.github.kclip.core.platform.Environment
 import io.github.kclip.core.platform.FileStore
+import io.github.kclip.core.platform.FileType
+import io.github.kclip.core.platform.ProcessIdentityResolver
 import io.github.kclip.core.platform.Sleeper
 
 /**
@@ -102,6 +104,7 @@ class SshForwardingController(
     private val commandRunner: CommandRunner,
     private val environment: Environment,
     private val fileStore: FileStore? = null,
+    private val processIdentityResolver: ProcessIdentityResolver? = null,
     private val sleeper: Sleeper? = null,
     private val sshExecutable: String,
 ) {
@@ -122,6 +125,9 @@ class SshForwardingController(
             Outcome.Err(noUsableControlMasterError(spec.destination, null))
         } else {
             checkControlMaster(controlDestination, controlPath)
+        }
+        if (preference == AttachTransportPreference.CONTROLMASTER && controlMasterCheck is Outcome.Err) {
+            return controlMasterCheck
         }
         val canUseControlMaster = controlMasterCheck is Outcome.Ok
         val plan = when (
@@ -158,15 +164,15 @@ class SshForwardingController(
 
         return when (metadata.transportKind) {
             AttachTransportKind.CONTROLMASTER -> {
-                val check = checkControlMaster(metadata.destination, metadata.controlPath)
+                val check = checkControlMaster(metadata.controlDestination, metadata.controlPath)
                 if (check is Outcome.Err) {
                     return check
                 }
 
-                forwardControlMaster(spec, metadata.controlPath, metadata.destination).toUnit()
+                forwardControlMaster(spec, metadata.controlPath, metadata.controlDestination).toUnit()
             }
             AttachTransportKind.DEDICATED -> {
-                if (checkControlMaster(metadata.destination, metadata.controlPath) is Outcome.Ok) {
+                if (checkControlMaster(metadata.controlDestination, metadata.controlPath) is Outcome.Ok) {
                     val cancel = cancelControlMaster(metadata)
                     if (cancel is Outcome.Err) {
                         return cancel
@@ -180,7 +186,7 @@ class SshForwardingController(
                 }
                 fileStore?.delete(metadata.controlPath)
 
-                startDedicated(spec, metadata.controlPath, metadata.destination).toUnit()
+                startDedicated(spec, metadata.controlPath, metadata.controlDestination).toUnit()
             }
         }
     }
@@ -192,38 +198,25 @@ class SshForwardingController(
         val forward = addForward(
             spec = spec,
             controlPath = metadata.controlPath,
-            controlDestination = metadata.destination,
+            controlDestination = metadata.controlDestination,
             message = "failed to add dedicated SSH forwarding",
         )
         if (forward is Outcome.Ok) {
             return forward
         }
-        val reclaim = reclaimRemoteSocket(metadata.remoteSocketPath, metadata.destination)
-        if (reclaim is Outcome.Err) {
-            return forward
-        }
-        val wait = sleeper?.sleepMillis(REMOTE_SOCKET_RECLAIM_DELAY_MILLIS)
-        if (wait is Outcome.Err) {
-            return wait
-        }
 
-        return addForward(
-            spec = spec,
-            controlPath = metadata.controlPath,
-            controlDestination = metadata.destination,
-            message = "failed to add dedicated SSH forwarding",
-        )
+        return forward
     }
 
     fun detach(metadata: LocalAttachmentMetadata): Outcome<Unit> {
         return when (metadata.transportKind) {
             AttachTransportKind.CONTROLMASTER -> cancelControlMaster(metadata)
-            AttachTransportKind.DEDICATED -> stopDedicated(metadata.destination, metadata.controlPath)
+            AttachTransportKind.DEDICATED -> stopDedicated(metadata.controlDestination, metadata.controlPath)
         }
     }
 
     fun health(metadata: LocalAttachmentMetadata): Outcome<AttachTransportHealth> {
-        val check = checkControlMaster(metadata.destination, metadata.controlPath)
+        val check = checkControlMaster(metadata.controlDestination, metadata.controlPath)
         val health = when (check) {
             is Outcome.Ok -> AttachTransportHealth.ACTIVE
             is Outcome.Err -> AttachTransportHealth.DEGRADED
@@ -245,6 +238,11 @@ class SshForwardingController(
     }
 
     private fun checkControlMaster(destination: String, controlPath: String): Outcome<Unit> {
+        val validation = validateControlPath(controlPath)
+        if (validation is Outcome.Err) {
+            return validation
+        }
+
         return runCommand(
             arguments = SshForwardingCommands.check(controlPath, destination),
             message = "no usable ControlMaster was found",
@@ -332,6 +330,11 @@ class SshForwardingController(
         controlDestination: String,
         message: String,
     ): Outcome<Unit> {
+        val validation = validateControlPath(controlPath)
+        if (validation is Outcome.Err) {
+            return validation
+        }
+
         return runCommand(
             arguments = SshForwardingCommands.forward(
                 controlPath = controlPath,
@@ -344,36 +347,31 @@ class SshForwardingController(
     }
 
     private fun cancelControlMaster(metadata: LocalAttachmentMetadata): Outcome<Unit> {
+        val validation = validateControlPath(metadata.controlPath)
+        if (validation is Outcome.Err) {
+            return validation
+        }
+
         return runCommand(
             arguments = SshForwardingCommands.cancel(
                 controlPath = metadata.controlPath,
                 remoteSocketPath = metadata.remoteSocketPath,
                 localSocketPath = metadata.localSocketPath,
-                destination = metadata.destination,
+                destination = metadata.controlDestination,
             ),
             message = "failed to cancel ControlMaster SSH forwarding",
         ).toUnit()
     }
 
     private fun stopDedicated(destination: String, controlPath: String): Outcome<Unit> {
-        return runCommand(
-            arguments = SshForwardingCommands.exitDedicated(controlPath, destination),
-            message = "failed to stop dedicated SSH master",
-        ).toUnit()
-    }
-
-    private fun reclaimRemoteSocket(remoteSocketPath: String, destination: String): Outcome<Unit> {
-        if (!isKclipRemoteSocketPath(remoteSocketPath)) {
-            return Outcome.Err(
-                KclipError.InvalidInput(
-                    message = "remote socket path is not a kclip-managed path",
-                ),
-            )
+        val validation = validateControlPath(controlPath)
+        if (validation is Outcome.Err) {
+            return validation
         }
 
         return runCommand(
-            arguments = SshForwardingCommands.unlinkRemoteSocket(remoteSocketPath, destination),
-            message = "failed to remove stale kclip remote socket",
+            arguments = SshForwardingCommands.exitDedicated(controlPath, destination),
+            message = "failed to stop dedicated SSH master",
         ).toUnit()
     }
 
@@ -387,6 +385,39 @@ class SshForwardingController(
                 attachmentId = metadata.attachmentId,
                 message = "attachment metadata does not contain a remote socket path",
                 detail = "run `kclip pair --replace --paste` remotely and attach again",
+            ),
+        )
+    }
+
+    private fun validateControlPath(controlPath: String): Outcome<Unit> {
+        val fileStore = fileStore ?: return Outcome.Ok(Unit)
+        val processIdentityResolver = processIdentityResolver ?: return Outcome.Ok(Unit)
+        val metadata = when (val outcome = fileStore.lstat(controlPath)) {
+            is Outcome.Ok -> outcome.value
+            is Outcome.Err -> return unsafeControlPath(controlPath, outcome.error.message)
+        }
+        val identity = when (val outcome = processIdentityResolver.current()) {
+            is Outcome.Ok -> outcome.value
+            is Outcome.Err -> return outcome
+        }
+        val hasExpectedOwner = metadata.ownerUid == identity.uid
+        val isSocket = metadata.type == FileType.SOCKET
+        val isOwnerOnly = (metadata.permissionMode.toInt() and GROUP_OR_OTHER_PERMISSION_MASK) == 0
+        if (hasExpectedOwner && isSocket && isOwnerOnly) {
+            return Outcome.Ok(Unit)
+        }
+
+        return unsafeControlPath(
+            controlPath = controlPath,
+            detail = "owner=${metadata.ownerUid}, mode=${metadata.permissionMode}, type=${metadata.type}",
+        )
+    }
+
+    private fun unsafeControlPath(controlPath: String, detail: String): Outcome.Err {
+        return Outcome.Err(
+            KclipError.ForwardingRejected(
+                message = "unsafe SSH ControlPath: $controlPath",
+                detail = detail,
             ),
         )
     }
@@ -427,6 +458,9 @@ class SshForwardingController(
 
         /** reconnect 時に remote listener の解放を待つ時間。 */
         const val REMOTE_SOCKET_RECLAIM_DELAY_MILLIS = 1_500L
+
+        /** group / other permission bit の mask。 */
+        const val GROUP_OR_OTHER_PERMISSION_MASK = 0x3f
     }
 }
 
@@ -557,20 +591,6 @@ object SshForwardingCommands {
             destination,
         )
     }
-
-    fun unlinkRemoteSocket(remoteSocketPath: String, destination: String): List<String> {
-        return listOf(
-            "-o",
-            "BatchMode=yes",
-            "-o",
-            "ConnectTimeout=8",
-            destination,
-            "rm",
-            "-f",
-            "--",
-            remoteSocketPath,
-        )
-    }
 }
 
 /**
@@ -660,19 +680,6 @@ internal fun chooseForwardingPlan(
     }
 }
 
-internal fun isKclipRemoteSocketPath(value: String): Boolean {
-    if (!value.startsWith(REMOTE_SOCKET_PREFIX) || !value.endsWith(REMOTE_SOCKET_SUFFIX)) {
-        return false
-    }
-    val socketId = value
-        .removePrefix(REMOTE_SOCKET_PREFIX)
-        .removeSuffix(REMOTE_SOCKET_SUFFIX)
-    val hasExpectedLength = socketId.length == REMOTE_SOCKET_HEX_LENGTH
-    val containsOnlyHex = socketId.all { character -> character in '0'..'9' || character in 'a'..'f' }
-
-    return hasExpectedLength && containsOnlyHex
-}
-
 private fun noUsableControlMasterError(destination: String, controlPath: String?): KclipError {
     val checkedPath = controlPath?.let { path -> " checked control path: $path" }.orEmpty()
 
@@ -681,15 +688,6 @@ private fun noUsableControlMasterError(destination: String, controlPath: String?
         detail = "pass the same SSH alias/options, pass --control-path, or use --transport=auto.$checkedPath",
     )
 }
-
-/** remote socket path の固定 prefix。 */
-private const val REMOTE_SOCKET_PREFIX = "/tmp/kclip-"
-
-/** remote socket path の固定 suffix。 */
-private const val REMOTE_SOCKET_SUFFIX = ".sock"
-
-/** pairing socket ID の hex 文字数。 */
-private const val REMOTE_SOCKET_HEX_LENGTH = 24
 
 private fun <T> Outcome<T>.toUnit(): Outcome<Unit> {
     return when (this) {

@@ -242,6 +242,33 @@ static inline int kclip_stat_identity(
     return 0;
 }
 
+static inline int kclip_lstat_metadata(
+    const char *path,
+    unsigned long long *owner_uid,
+    unsigned int *permission_mode,
+    int *file_type
+) {
+    struct stat stat_buffer;
+    if (lstat(path, &stat_buffer) != 0) {
+        return -1;
+    }
+
+    *owner_uid = (unsigned long long)stat_buffer.st_uid;
+    *permission_mode = (unsigned int)(stat_buffer.st_mode & 0777);
+
+    if (S_ISREG(stat_buffer.st_mode)) {
+        *file_type = 1;
+    } else if (S_ISDIR(stat_buffer.st_mode)) {
+        *file_type = 2;
+    } else if (S_ISSOCK(stat_buffer.st_mode)) {
+        *file_type = 3;
+    } else {
+        *file_type = 4;
+    }
+
+    return 0;
+}
+
 static inline int kclip_current_uid(void) {
     return (int)getuid();
 }

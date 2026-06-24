@@ -10,7 +10,9 @@ import io.github.kclip.core.domain.KclipError
 import io.github.kclip.core.domain.Outcome
 import io.github.kclip.core.domain.Secret16
 import io.github.kclip.core.domain.TtyIdentity
+import io.github.kclip.core.platform.FileMetadata
 import io.github.kclip.core.platform.FileStore
+import io.github.kclip.core.platform.FileType
 import io.github.kclip.core.platform.RuntimePaths
 import io.github.kclip.core.platform.TtyIdentityResolver
 import kotlin.test.Test
@@ -83,6 +85,25 @@ private class MemoryFileStore : FileStore {
 
     override fun exists(path: String): Outcome<Boolean> {
         return Outcome.Ok(files.containsKey(path))
+    }
+
+    override fun lstat(path: String): Outcome<FileMetadata> {
+        if (!files.containsKey(path)) {
+            return Outcome.Err(
+                KclipError.AttachmentUnavailable(
+                    attachmentId = null,
+                    message = "missing test file",
+                ),
+            )
+        }
+
+        return Outcome.Ok(
+            FileMetadata(
+                ownerUid = 0u,
+                permissionMode = 384u,
+                type = FileType.REGULAR,
+            ),
+        )
     }
 
     override fun readBytes(path: String, maxBytes: Int): Outcome<ByteArray> {

@@ -79,6 +79,7 @@ class AttachCommand(
             attachmentId = attachmentId,
             agentProcessId = agentProcess.processId,
             destination = destination,
+            controlDestination = plan.controlDestination,
             transportKind = plan.transportKind,
             remoteSocketPath = remoteSocketPath,
             localSocketPath = localEndpoint.path,
@@ -277,6 +278,7 @@ class AttachCommand(
             attachmentId = attachmentId,
             agentProcessId = agentProcess.processId,
             destination = destination,
+            controlDestination = destination,
             transportKind = AttachTransportKind.DEDICATED,
             remoteSocketPath = "",
             localSocketPath = localSocketPath,
@@ -295,6 +297,7 @@ class AttachCommand(
             commandRunner = platformServices.commandRunner,
             environment = platformServices.environment,
             fileStore = platformServices.fileStore,
+            processIdentityResolver = platformServices.processIdentityResolver,
             sleeper = platformServices.sleeper,
             sshExecutable = sshExecutable,
         )

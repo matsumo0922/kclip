@@ -14,6 +14,7 @@ data class LocalAttachmentMetadata(
     val attachmentId: AttachmentId,
     val agentProcessId: Int,
     val destination: String,
+    val controlDestination: String,
     val transportKind: AttachTransportKind,
     val remoteSocketPath: String,
     val localSocketPath: String,
@@ -35,6 +36,7 @@ object LocalAttachmentMetadataCodec {
             "attachmentId=${metadata.attachmentId.value}",
             "agentProcessId=${metadata.agentProcessId}",
             "destination=${metadata.destination}",
+            "controlDestination=${metadata.controlDestination}",
             "transport=${metadata.transportKind.metadataValue}",
             "remoteSocketPath=${metadata.remoteSocketPath}",
             "localSocketPath=${metadata.localSocketPath}",
@@ -78,6 +80,7 @@ object LocalAttachmentMetadataCodec {
                 agentProcessId = required(values, "agentProcessId").toIntOrNull()
                     ?: return invalidMetadata("agentProcessId must be an integer"),
                 destination = required(values, "destination"),
+                controlDestination = values["controlDestination"] ?: required(values, "destination"),
                 transportKind = AttachTransportKind.fromMetadata(values["transport"]),
                 remoteSocketPath = values["remoteSocketPath"] ?: LEGACY_REMOTE_SOCKET_PATH,
                 localSocketPath = required(values, "localSocketPath"),

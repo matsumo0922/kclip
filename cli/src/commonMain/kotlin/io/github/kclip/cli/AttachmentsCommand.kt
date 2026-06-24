@@ -42,6 +42,7 @@ class AttachmentsCommand(
             commandRunner = platformServices.commandRunner,
             environment = platformServices.environment,
             fileStore = platformServices.fileStore,
+            processIdentityResolver = platformServices.processIdentityResolver,
             sleeper = platformServices.sleeper,
             sshExecutable = "/usr/bin/ssh",
         )
@@ -95,6 +96,7 @@ class DetachCommand(
             commandRunner = platformServices.commandRunner,
             environment = platformServices.environment,
             fileStore = platformServices.fileStore,
+            processIdentityResolver = platformServices.processIdentityResolver,
             sleeper = platformServices.sleeper,
             sshExecutable = "/usr/bin/ssh",
         )
@@ -139,6 +141,7 @@ class ReconnectCommand(
             commandRunner = platformServices.commandRunner,
             environment = platformServices.environment,
             fileStore = platformServices.fileStore,
+            processIdentityResolver = platformServices.processIdentityResolver,
             sleeper = platformServices.sleeper,
             sshExecutable = sshExecutable,
         )
