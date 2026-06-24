@@ -3,6 +3,7 @@ package io.github.kclip.core.protocol
 import io.github.kclip.core.domain.Deadline
 import io.github.kclip.core.domain.KclipError
 import io.github.kclip.core.domain.Outcome
+import io.github.kclip.core.domain.ProtocolByteChannel
 import io.github.kclip.core.domain.Secret16
 import kotlin.test.Test
 import kotlin.test.assertContentEquals

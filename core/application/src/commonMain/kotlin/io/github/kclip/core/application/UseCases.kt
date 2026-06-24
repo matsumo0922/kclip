@@ -151,7 +151,15 @@ interface PairAgentClient {
  * remote lease と TTY binding を atomic commit する repository。
  */
 interface AttachmentStateRepository {
+    fun findBinding(ttyIdentity: TtyIdentity): Outcome<AttachmentBinding?>
+
     fun commit(lease: AttachmentLease, binding: AttachmentBinding): Outcome<Unit>
+
+    fun rollback(
+        lease: AttachmentLease,
+        binding: AttachmentBinding,
+        previousBinding: AttachmentBinding?,
+    ): Outcome<Unit>
 }
 
 /**
@@ -162,6 +170,21 @@ class RemotePairUseCase(
     private val stateRepository: AttachmentStateRepository,
 ) {
     fun execute(options: PairOptions, context: RemotePairContext): Outcome<RemotePairResult> {
+        val existingBinding = stateRepository.findBinding(context.ttyIdentity)
+        if (existingBinding is Outcome.Err) {
+            return existingBinding
+        }
+        val previousBinding = (existingBinding as Outcome.Ok<AttachmentBinding?>).value
+        val alreadyBound = previousBinding != null
+        if (alreadyBound && !options.replaceExisting) {
+            return Outcome.Err(
+                KclipError.InvalidInput(
+                    message = "this terminal is already bound to an attachment",
+                    detail = "use `kclip pair --replace` to replace the binding",
+                ),
+            )
+        }
+
         val pairFrame = PairFrame(
             requestedCapabilities = requestedCapabilities(options),
             remoteUid = context.remoteUid,
@@ -192,6 +215,8 @@ class RemotePairUseCase(
         }
         val confirm = agentClient.confirm(acceptedFrame)
         if (confirm is Outcome.Err) {
+            stateRepository.rollback(lease, binding, previousBinding)
+
             return confirm
         }
 

@@ -3,8 +3,13 @@ package io.github.kclip
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.main
 import com.github.ajalt.clikt.core.subcommands
+import io.github.kclip.cli.AttachAgentCommand
+import io.github.kclip.cli.AttachCommand
+import io.github.kclip.cli.AttachmentsCommand
 import io.github.kclip.cli.CopyCommand
+import io.github.kclip.cli.DetachCommand
 import io.github.kclip.cli.DoctorCommand
+import io.github.kclip.cli.PairCommand
 import io.github.kclip.cli.PasteCommand
 import io.github.kclip.cli.VersionCommand
 import io.github.kclip.core.platform.createPlatformServices
@@ -16,6 +21,11 @@ fun main(args: Array<String>) {
         .subcommands(
             CopyCommand(platformServices),
             PasteCommand(platformServices),
+            PairCommand(platformServices),
+            AttachCommand(platformServices),
+            AttachmentsCommand(platformServices),
+            DetachCommand(platformServices),
+            AttachAgentCommand(platformServices),
             VersionCommand(),
             DoctorCommand(platformServices),
         )

@@ -2,6 +2,8 @@ package io.github.kclip.cli
 
 import com.github.ajalt.clikt.core.CliktCommand
 import io.github.kclip.core.domain.BackendPreference
+import io.github.kclip.core.domain.ClipboardBackend
+import io.github.kclip.core.domain.ClipboardBackendResolver
 import io.github.kclip.core.domain.KclipError
 import io.github.kclip.core.domain.Outcome
 import kotlin.system.exitProcess
@@ -36,4 +38,15 @@ fun CliktCommand.exitWith(error: KclipError): Nothing {
         }
 
     exitProcess(error.exitCode)
+}
+
+/**
+ * 解決済み backend を use case へ渡すための resolver。
+ */
+class FixedClipboardBackendResolver(
+    private val backend: ClipboardBackend,
+) : ClipboardBackendResolver {
+    override fun resolve(preference: BackendPreference): Outcome<ClipboardBackend> {
+        return Outcome.Ok(backend)
+    }
 }

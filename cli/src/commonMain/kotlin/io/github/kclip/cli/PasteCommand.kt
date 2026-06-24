@@ -7,6 +7,8 @@ import com.github.ajalt.clikt.parameters.types.int
 import io.github.kclip.core.application.DefaultClipboardLimits
 import io.github.kclip.core.application.PasteOptions
 import io.github.kclip.core.application.PasteUseCase
+import io.github.kclip.core.domain.AttachmentId
+import io.github.kclip.core.domain.ClipboardOperation
 import io.github.kclip.core.domain.Outcome
 import io.github.kclip.core.platform.PlatformServices
 
@@ -19,6 +21,7 @@ class PasteCommand(
     name = "paste",
 ) {
     private val backend by option("--backend").default("auto")
+    private val attachment by option("--attachment")
     private val maxBytes by option("--max-bytes").int().default(DefaultClipboardLimits.MAX_BYTES)
 
     override fun run() {
@@ -26,11 +29,24 @@ class PasteCommand(
             is Outcome.Ok -> outcome.value
             is Outcome.Err -> exitWith(outcome.error)
         }
+        val attachmentId = parseAttachmentId(attachment)
         val options = PasteOptions(
             backendPreference = backendPreference,
             maxBytes = maxBytes,
         )
-        val useCase = PasteUseCase(platformServices.clipboardBackendResolver)
+        val backendOutcome = resolveClipboardBackend(
+            operation = ClipboardOperation.PASTE,
+            preference = backendPreference,
+            attachmentId = attachmentId,
+            platformServices = platformServices,
+        )
+        val backend = when (backendOutcome) {
+            is Outcome.Ok -> backendOutcome.value
+            is Outcome.Err -> exitWith(backendOutcome.error)
+        }
+        val useCase = PasteUseCase(
+            backendResolver = FixedClipboardBackendResolver(backend),
+        )
         val payload = when (val outcome = useCase.execute(options)) {
             is Outcome.Ok -> outcome.value
             is Outcome.Err -> exitWith(outcome.error)
@@ -38,6 +54,15 @@ class PasteCommand(
         val result = platformServices.standardOutput.writeAll(payload.copyBytes())
         if (result is Outcome.Err) {
             exitWith(result.error)
+        }
+    }
+
+    private fun parseAttachmentId(value: String?): AttachmentId? {
+        if (value == null) return null
+
+        return when (val outcome = AttachmentId.parse(value)) {
+            is Outcome.Ok -> outcome.value
+            is Outcome.Err -> exitWith(outcome.error)
         }
     }
 }

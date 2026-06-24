@@ -3,6 +3,7 @@ package io.github.kclip.core.protocol
 import io.github.kclip.core.domain.Deadline
 import io.github.kclip.core.domain.KclipError
 import io.github.kclip.core.domain.Outcome
+import io.github.kclip.core.domain.ProtocolByteChannel
 import io.github.kclip.core.domain.Secret16
 
 /**
@@ -72,20 +73,6 @@ data class ProtocolLimits(
 ) {
     val maxResponseBodyBytes: Int
         get() = maxOf(maxPasteBytes, maxPingBytes, maxErrorBodyBytes)
-}
-
-/**
- * protocol codec が必要とする最小 byte channel。
- */
-interface ProtocolByteChannel {
-    fun read(
-        destination: ByteArray,
-        offset: Int,
-        length: Int,
-        deadline: Deadline,
-    ): Outcome<Int>
-
-    fun writeAll(source: ByteArray, deadline: Deadline): Outcome<Unit>
 }
 
 /**
@@ -268,6 +255,7 @@ class DefaultAgentProtocolCodec : AgentProtocolCodec {
             AgentOperation.COPY -> limits.maxCopyBytes
             AgentOperation.PASTE -> 0
             AgentOperation.PING -> 0
+            AgentOperation.SHUTDOWN -> 0
         }
         if (payloadLength > maxBytes.toUInt()) {
             return tooLarge(payloadLength, maxBytes)
@@ -288,7 +276,8 @@ class DefaultAgentProtocolCodec : AgentProtocolCodec {
         if (operation == AgentOperation.PAIR_CONFIRM && payload.size != SECRET_BYTES) {
             return protocolFailure("PAIR_CONFIRM body must be 16 bytes")
         }
-        val expectsEmptyBody = operation == AgentOperation.PASTE || operation == AgentOperation.PING
+        val emptyBodyOperations = setOf(AgentOperation.PASTE, AgentOperation.PING, AgentOperation.SHUTDOWN)
+        val expectsEmptyBody = operation in emptyBodyOperations
         if (expectsEmptyBody && payload.isNotEmpty()) {
             return protocolFailure("${operation.name} request body must be empty")
         }
