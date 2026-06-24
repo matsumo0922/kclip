@@ -2274,8 +2274,8 @@ reconnect 時の順序:
 
 1. 既存 forward を `cancel` / `exit` できるなら停止
 2. same path で再 forward
-3. `StreamLocalBindUnlink=yes` を利用できる transport では stale socket を unlink
-4. `EADDRINUSE` が継続する場合は automatic reconnect を停止
+3. mux `-O forward` では `StreamLocalBindUnlink=yes` だけで stale socket を置換できると仮定しない
+4. stale socket collision が継続する場合は automatic reconnect を停止
 5. user に `kclip pair --replace` を案内し、新しい path/attachment を作る
 
 remote の arbitrary file を local から削除する仕組みは持たない。
@@ -2462,6 +2462,8 @@ ssh \
 ```
 
 この2段階にする理由は、`ClearAllForwardings=yes` が config file だけでなく command-line の forwarding も clear するためである。同じ command へ `-R` を混在させてはならない。2段目の mux control operation は `-F /dev/null` で config forwarding と local command を隔離する。
+
+Phase 0.5 の macOS-to-macOS spike では、private master 起動時と mux `-O forward` の両方に `StreamLocalBindUnlink=yes` を指定しても、既存 stale socket は置換されず `remote port forwarding failed for listen path ...` で失敗した。したがって production transport は mux `-O forward` による stale socket 自動修復を前提にせず、明示的な stale collision として扱う。
 
 - `-f` により authentication が完了した後に OpenSSH master 自身が background になる。
 - password/passphrase prompt は `kclip attach` が foreground の間に current TTY へ表示される。
@@ -2850,6 +2852,8 @@ ssh \
 ```
 
 `ClearAllForwardings=yes` と `-R` を同じ invocation に置かない。前者は command-line の forwarding も clear するためである。2段目は `-F /dev/null` により private master の制御以外の user/system config を持ち込まない。
+
+stale remote socket は mux `-O forward` の失敗として分類し、自動 unlink には依存しない。Phase 0.5 spike では `StreamLocalBindUnlink=yes` を指定しても stale socket 置換は成功しなかった。
 
 特徴:
 
@@ -3994,7 +3998,7 @@ v1 初期 release では `doctor` に candidate を表示し、`kclip attachment
 remote Unix socket は sshd/OpenSSH が所有する。kclip remote process が arbitrary path を unlink しない。
 
 - normal cancel/connection close による OpenSSH cleanupを期待
-- reconnect時は `StreamLocalBindUnlink=yes`
+- reconnect時も mux `-O forward` の stale socket 置換には依存しない
 - ControlMaster transport では `-O cancel`
 - stale collision が残れば new pairingで new random path
 - `kclip doctor` は path を削除しない

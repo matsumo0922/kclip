@@ -47,3 +47,12 @@ jobs:
 
       - name: Validate Linux build
         run: ./gradlew :core:domain:linuxX64Test :core:protocol:linuxX64Test :cli:compileKotlinLinuxX64
+
+      - name: Install OpenSSH server
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openssh-server
+          sudo mkdir -p /run/sshd
+
+      - name: Validate OpenSSH transport spike
+        run: integration/openssh/run-openssh-spike.sh --self-test
