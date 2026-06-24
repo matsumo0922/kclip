@@ -25,6 +25,10 @@ class Secret16 private constructor(
         return difference == 0
     }
 
+    fun destroy() {
+        bytes.fill(0)
+    }
+
     override fun toString(): String {
         return "Secret16(REDACTED)"
     }

@@ -7,7 +7,11 @@ import io.github.kclip.core.domain.Secret16
  */
 data class AgentProtocolVersion(
     val value: UByte,
-)
+) {
+    companion object {
+        val CURRENT = AgentProtocolVersion(1u)
+    }
+}
 
 /**
  * agent wire protocol の operation。
@@ -20,6 +24,13 @@ enum class AgentOperation(
     COPY(3u),
     PASTE(4u),
     PING(5u),
+    ;
+
+    companion object {
+        fun fromWireValue(value: UByte): AgentOperation? {
+            return entries.firstOrNull { operation -> operation.wireValue == value }
+        }
+    }
 }
 
 /**
@@ -41,6 +52,13 @@ enum class AgentStatus(
     PAIRING_CONSUMED(10u),
     ATTACHMENT_NOT_ACTIVE(11u),
     INTERNAL(12u),
+    ;
+
+    companion object {
+        fun fromWireValue(value: UByte): AgentStatus? {
+            return entries.firstOrNull { status -> status.wireValue == value }
+        }
+    }
 }
 
 /**

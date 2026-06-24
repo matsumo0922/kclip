@@ -1,13 +1,23 @@
 package io.github.kclip.core.application
 
+import io.github.kclip.core.domain.AttachmentBinding
 import io.github.kclip.core.domain.AttachmentId
+import io.github.kclip.core.domain.AttachmentLease
 import io.github.kclip.core.domain.BackendPreference
 import io.github.kclip.core.domain.ClipboardBackendResolver
+import io.github.kclip.core.domain.ClipboardCapability
 import io.github.kclip.core.domain.ClipboardPayload
+import io.github.kclip.core.domain.EpochSeconds
+import io.github.kclip.core.domain.IpcEndpoint
 import io.github.kclip.core.domain.KclipError
 import io.github.kclip.core.domain.Outcome
+import io.github.kclip.core.domain.PairCredential
 import io.github.kclip.core.domain.PairingCode
+import io.github.kclip.core.domain.PairingMaterial
+import io.github.kclip.core.domain.TtyIdentity
 import io.github.kclip.core.domain.flatMap
+import io.github.kclip.core.protocol.PairAcceptedFrame
+import io.github.kclip.core.protocol.PairFrame
 
 /**
  * copy command の実行 option。
@@ -104,5 +114,101 @@ class PairUseCase {
 class AttachUseCase {
     fun execute(options: AttachOptions): Outcome<AttachmentId> {
         return Outcome.Ok(AttachmentId("KC-${options.destination.hashCode().toUInt().toString(radix = 16)}"))
+    }
+}
+
+/**
+ * remote 側 PAIR protocol に必要な runtime context。
+ */
+data class RemotePairContext(
+    val material: PairingMaterial,
+    val endpoint: IpcEndpoint,
+    val remoteUid: ULong,
+    val username: String,
+    val hostname: String,
+    val ttyIdentity: TtyIdentity,
+    val createdAt: EpochSeconds,
+)
+
+/**
+ * remote 側 PAIR 完了後に作成される state。
+ */
+data class RemotePairResult(
+    val lease: AttachmentLease,
+    val binding: AttachmentBinding,
+)
+
+/**
+ * local agent へ PAIR / PAIR_CONFIRM を送る client。
+ */
+interface PairAgentClient {
+    fun pair(credential: PairCredential, frame: PairFrame): Outcome<PairAcceptedFrame>
+
+    fun confirm(acceptedFrame: PairAcceptedFrame): Outcome<Unit>
+}
+
+/**
+ * remote lease と TTY binding を atomic commit する repository。
+ */
+interface AttachmentStateRepository {
+    fun commit(lease: AttachmentLease, binding: AttachmentBinding): Outcome<Unit>
+}
+
+/**
+ * remote `kclip pair` の PAIR / PAIR_CONFIRM flow。
+ */
+class RemotePairUseCase(
+    private val agentClient: PairAgentClient,
+    private val stateRepository: AttachmentStateRepository,
+) {
+    fun execute(options: PairOptions, context: RemotePairContext): Outcome<RemotePairResult> {
+        val pairFrame = PairFrame(
+            requestedCapabilities = requestedCapabilities(options),
+            remoteUid = context.remoteUid,
+            username = context.username,
+            hostname = context.hostname,
+            ttyIdentity = context.ttyIdentity,
+        )
+        val acceptedFrame = when (val outcome = agentClient.pair(context.material.credential, pairFrame)) {
+            is Outcome.Ok -> outcome.value
+            is Outcome.Err -> return outcome
+        }
+        val lease = AttachmentLease(
+            formatVersion = 1u,
+            id = acceptedFrame.attachmentId,
+            endpoint = context.endpoint,
+            nonce = acceptedFrame.attachmentNonce,
+            capabilities = acceptedFrame.grantedCapabilities,
+            scope = context.ttyIdentity,
+            createdAt = context.createdAt,
+        )
+        val binding = AttachmentBinding(
+            attachmentId = acceptedFrame.attachmentId,
+            ttyIdentity = context.ttyIdentity,
+        )
+        val commit = stateRepository.commit(lease, binding)
+        if (commit is Outcome.Err) {
+            return commit
+        }
+        val confirm = agentClient.confirm(acceptedFrame)
+        if (confirm is Outcome.Err) {
+            return confirm
+        }
+
+        return Outcome.Ok(
+            RemotePairResult(
+                lease = lease,
+                binding = binding,
+            ),
+        )
+    }
+
+    private fun requestedCapabilities(options: PairOptions): Set<ClipboardCapability> {
+        val capabilities = mutableSetOf(ClipboardCapability.COPY)
+        if (options.requestPaste) {
+            capabilities.add(ClipboardCapability.PASTE)
+        }
+
+        return capabilities
     }
 }
